@@ -1,7 +1,5 @@
 name: Publish verified Windows release
 on:
-  pull_request:
-    paths: ['.github/workflows/publish-windows-release.yml']
   workflow_dispatch:
 permissions:
   contents: write

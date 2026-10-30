@@ -7,27 +7,7 @@ CHART_CONFIG = dict(scrollZoom=True, displayModeBar=True, displaylogo=False,
                     doubleClick='reset', toImageButtonOptions=dict(format='png',scale=2))
 
 
-def select_cycles(spec, available):
-    """Resolve ranges against existing IDs, without expanding arbitrary-size ranges."""
-    available=list(available)
-    if not spec.strip():raise ValueError('Cycle을 입력하세요. 예: 1,5,10-50:5')
-    if spec.strip().lower() in ('전체','all'):return available,[]
-    selected=[];missing=[]
-    for token in spec.split(','):
-        token=token.strip()
-        if not token:raise ValueError('쉼표 사이에 빈 항목이 있습니다.')
-        if token in available:
-            selected.append(token);continue
-        match=re.fullmatch(r'(\d+)\s*-\s*(\d+)(?:\s*:\s*(\d+))?',token)
-        if match:
-            start,end,step=map(int,(match[1],match[2],match[3] or '1'))
-            if step<1 or start>end:raise ValueError('범위는 시작 ≤ 끝, 간격은 1 이상이어야 합니다.')
-            found=[c for c in available if c.isdigit() and start<=int(c)<=end and (int(c)-start)%step==0]
-            selected.extend(found)
-            if len(found)<(end-start)//step+1:missing.append(token)
-        elif re.fullmatch(r'\d+',token):missing.append(token)
-        else:raise ValueError(f'잘못된 Cycle 입력: {token}. 예: 1,5,10-50:5 또는 전체')
-    return list(dict.fromkeys(selected)),missing
+from cycle_selection import select_cycles
 
 
 def add_curves(fig,qfig,raw,result,cycle,direction,color_index,absolute=False,show_peaks=True):

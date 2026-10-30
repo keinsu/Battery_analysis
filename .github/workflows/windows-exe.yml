@@ -1,7 +1,5 @@
 name: Build Windows EXE
 on:
-  pull_request:
-    paths: ['dqdv/**', '.github/workflows/windows-exe.yml']
   workflow_dispatch:
 permissions:
   contents: read
