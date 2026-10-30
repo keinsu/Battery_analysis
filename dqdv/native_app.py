@@ -91,33 +91,37 @@ class MainWindow(QtWidgets.QMainWindow):
         split=QtWidgets.QSplitter();outer.addWidget(split)
         scroll=QtWidgets.QScrollArea();scroll.setWidgetResizable(True);scroll.setMinimumWidth(310)
         panel=QtWidgets.QWidget();form=QtWidgets.QFormLayout(panel);scroll.setWidget(panel);split.addWidget(scroll)
-        self.mapping={};self.units={}
+        self.mapping={};self.units={};self.no_wheel_widgets=[]
         defaults={'channel':'Channel','cycle':'TotCycle','step':'StepNo','type':'Type','time':'TotTime(H:M:S)',
                   'voltage':'Voltage(V)','current':'Current(mA)','capacity':'Capacity(mAh)'}
         self.defaults=defaults
+        self.mapping_toggle=QtWidgets.QToolButton();self.mapping_toggle.setCheckable(True);self.mapping_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.mapping_toggle.toggled.connect(self.toggle_mapping);form.addRow(self.mapping_toggle)
+        self.mapping_panel=QtWidgets.QWidget();mapping_form=QtWidgets.QFormLayout(self.mapping_panel);mapping_form.setContentsMargins(0,0,0,6)
         for key,label in [('channel','채널 열'),('cycle','Cycle 열'),('step','Step 열'),('type','충방전 종류 열'),
                           ('time','시간 열'),('voltage','전압 열'),('current','전류 열'),('capacity','용량 열')]:
-            combo=QtWidgets.QComboBox();self.mapping[key]=combo;form.addRow(label,combo)
+            combo=QtWidgets.QComboBox();self.mapping[key]=combo;mapping_form.addRow(label,combo);self.lock_wheel(combo)
             combo.currentIndexChanged.connect(self.invalidate)
         for key,label,options in [('voltage','전압 단위',['V','mV','µV']),('current','전류 단위',['A','mA']),
                                   ('capacity','용량 단위',['Ah','mAh']),('time','시간 형식',['H:M:S / Nd H:M:S','s'])]:
-            combo=QtWidgets.QComboBox();combo.addItems(options);self.units[key]=combo;form.addRow(label,combo)
+            combo=QtWidgets.QComboBox();combo.addItems(options);self.units[key]=combo;mapping_form.addRow(label,combo);self.lock_wheel(combo)
             combo.currentIndexChanged.connect(self.invalidate)
-        self.positive=QtWidgets.QCheckBox('양의 전류 = 충전');self.positive.setChecked(True);form.addRow(self.positive)
+        self.positive=QtWidgets.QCheckBox('양의 전류 = 충전');self.positive.setChecked(True);mapping_form.addRow(self.positive)
         self.positive.toggled.connect(self.invalidate)
-        remap=QtWidgets.QPushButton('열·단위 적용 / 구간 확인');remap.clicked.connect(self.apply_mapping_safe);form.addRow(remap)
-        self.channel=QtWidgets.QComboBox();form.addRow('분석 채널',self.channel)
-        self.direction=QtWidgets.QComboBox();self.direction.addItems(['충전 + 방전','충전','방전']);form.addRow('분석 방향',self.direction)
+        remap=QtWidgets.QPushButton('열·단위 적용 / 구간 확인');remap.clicked.connect(self.apply_mapping_safe);mapping_form.addRow(remap)
+        form.addRow(self.mapping_panel);self.toggle_mapping(False)
+        self.channel=QtWidgets.QComboBox();form.addRow('분석 채널',self.channel);self.lock_wheel(self.channel)
+        self.direction=QtWidgets.QComboBox();self.direction.addItems(['충전 + 방전','충전','방전']);form.addRow('분석 방향',self.direction);self.lock_wheel(self.direction)
         self.cycles=QtWidgets.QLineEdit('1');self.cycles.setPlaceholderText('1,5,10-50:5 또는 전체');form.addRow('Cycle 선택',self.cycles)
         self.available=QtWidgets.QLabel('');self.available.setWordWrap(True);form.addRow(self.available)
-        self.points=self.spin(50,20000,500,50);form.addRow('보간 포인트 수',self.points)
+        self.points=self.spin(50,20000,500,50);form.addRow('보간 포인트 수',self.points);self.lock_wheel(self.points)
         self.smooth=QtWidgets.QCheckBox('스무딩 사용');self.smooth.setChecked(True);form.addRow(self.smooth)
         self.auto=QtWidgets.QCheckBox('윈도 자동');self.auto.setChecked(True);form.addRow(self.auto)
-        self.window=self.spin(5,19999,21,2);form.addRow('윈도 (포인트)',self.window)
-        self.poly=self.spin(1,10,3);form.addRow('다항식 차수',self.poly)
-        self.prom=QtWidgets.QDoubleSpinBox();self.prom.setRange(.01,100);self.prom.setValue(5);self.prom.setSuffix(' %');form.addRow('피크 민감도',self.prom)
+        self.window=self.spin(5,19999,21,2);form.addRow('윈도 (포인트)',self.window);self.lock_wheel(self.window)
+        self.poly=self.spin(1,10,3);form.addRow('다항식 차수',self.poly);self.lock_wheel(self.poly)
+        self.prom=QtWidgets.QDoubleSpinBox();self.prom.setRange(.01,100);self.prom.setValue(5);self.prom.setSuffix(' %');form.addRow('피크 민감도',self.prom);self.lock_wheel(self.prom)
         self.manual_upper=QtWidgets.QCheckBox('충전 상한전압 직접 지정');form.addRow(self.manual_upper)
-        self.upper=QtWidgets.QDoubleSpinBox();self.upper.setRange(-100,1000);self.upper.setDecimals(4);self.upper.setValue(4.2);self.upper.setSuffix(' V');form.addRow(self.upper)
+        self.upper=QtWidgets.QDoubleSpinBox();self.upper.setRange(-100,1000);self.upper.setDecimals(4);self.upper.setValue(4.2);self.upper.setSuffix(' V');form.addRow(self.upper);self.lock_wheel(self.upper)
         self.absolute=QtWidgets.QCheckBox('방전 dQ/dV 절댓값 표시');form.addRow(self.absolute)
         self.show_peaks=QtWidgets.QCheckBox('피크 표시');self.show_peaks.setChecked(True);form.addRow(self.show_peaks)
         defaults_btn=QtWidgets.QPushButton('기본 계산 조건 복원');defaults_btn.clicked.connect(self.restore_defaults);form.addRow(defaults_btn)
@@ -171,10 +175,32 @@ class MainWindow(QtWidgets.QMainWindow):
     def spin(low,high,value,step=1):
         w=QtWidgets.QSpinBox();w.setRange(low,high);w.setValue(value);w.setSingleStep(step);return w
 
+    def lock_wheel(self,widget):
+        """Keep a scrolling pointer from changing a left-panel setting."""
+        self.no_wheel_widgets.append(widget);widget.installEventFilter(self)
+
+    def eventFilter(self,watched,event):
+        if watched in self.no_wheel_widgets and event.type()==QtCore.QEvent.Type.Wheel:
+            event.accept()
+            return True
+        return super().eventFilter(watched,event)
+
+    def toggle_mapping(self,visible):
+        self.mapping_panel.setVisible(visible)
+        self.mapping_toggle.setArrowType(QtCore.Qt.ArrowType.DownArrow if visible else QtCore.Qt.ArrowType.RightArrow)
+        self.mapping_toggle.setText('열 · 단위 설정 숨기기' if visible else '열 · 단위 설정 보기')
+
     def sync_controls(self,*args):
         if self.auto.isChecked():self.window.setValue(max(11,(self.points.value()//25)|1))
         self.window.setEnabled(self.smooth.isChecked() and not self.auto.isChecked())
         self.poly.setEnabled(self.smooth.isChecked());self.upper.setEnabled(self.manual_upper.isChecked())
+
+    @staticmethod
+    def cycle_color(index,total):
+        """Map the selected cycle order from red (early) to blue (late)."""
+        ratio=index/max(total-1,1)
+        start,end=QtGui.QColor('#dc2626'),QtGui.QColor('#2563eb')
+        return QtGui.QColor(round(start.red()+(end.red()-start.red())*ratio),round(start.green()+(end.green()-start.green())*ratio),round(start.blue()+(end.blue()-start.blue())*ratio))
 
     def invalidate(self,*args):
         if hasattr(self,'exports'):
@@ -277,7 +303,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     r,report=calculate_cycle(channel_df,cycle,direction,**params)
                     if r is None:excluded.append(f'{cycle} {direction}: '+report['reason']);continue
                     name=f'Cycle {cycle} · '+('충전' if direction=='charge' else '방전')
-                    color=pg.intColor(ci,hues=max(len(chosen),6),values=1,maxValue=190)
+                    color=self.cycle_color(ci,len(chosen))
                     pen=pg.mkPen(color,width=2,style=QtCore.Qt.PenStyle.SolidLine if direction=='charge' else QtCore.Qt.PenStyle.DashLine)
                     y=np.abs(r['dqdv']) if self.absolute.isChecked() else r['dqdv']
                     item=self.plots[0].plot(r['voltage_grid'],y,pen=pen,name=name)
@@ -403,6 +429,8 @@ def smoke(app,output):
         assert suite.windowTitle()=='Battery Analysis Suite'
         assert len(suite.findChildren(QtWidgets.QPushButton))==2
         suite.close()
+        assert MainWindow.cycle_color(0,3).name()=='#dc2626'
+        assert MainWindow.cycle_color(2,3).name()=='#2563eb'
         rows=[]
         for cycle in [1,5,10]:
             for direction,sign in [('충전',1),('방전',-1)]:
