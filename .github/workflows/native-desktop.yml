@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: native-desktop-v0.4.1
+  group: native-desktop-v0.4.2
   cancel-in-progress: false
 jobs:
   build:
@@ -42,7 +42,7 @@ jobs:
             const fs = require('fs');
             const crypto = require('crypto');
             const repo = context.repo;
-            const tag = 'v0.4.1-native';
+            const tag = 'v0.4.2-native';
             const target = context.payload.pull_request?.head.sha || context.sha;
             const data = fs.readFileSync('dist/DQDVAnalyzer-Desktop.exe');
             const digest = crypto.createHash('sha256').update(data).digest('hex');
@@ -51,8 +51,8 @@ jobs:
             catch(e) { if(e.status!==404) throw e; }
             if(release && !release.draft) throw new Error('Release already published; do not replace existing executable');
             if(!release) release=(await github.rest.repos.createRelease({...repo, tag_name:tag,target_commitish:target,
-              name:'dQ/dV Cycling Desktop v0.4.1 — 독립 실행파일',draft:true,
-              body:'브라우저 없이 자체 Windows 창에서 실행하는 데스크톱 프로그램입니다. Python 설치나 별도 폴더 없이 DQDVAnalyzer-Desktop.exe 하나를 실행하세요.\n\n예전 분석기의 dQ/dV 표시 방식을 반영했습니다: 선택 cycle의 dQ/dV 겹쳐보기, 단일 cycle의 V–Q와 dQ/dV 나란히 보기, Cycle–Peak voltage 추이.\n\nWindows 계산 테스트와 완성된 단일 EXE의 화면 생성·CSV 분석·좌표 표시 검증 통과.\n\nSHA-256: '+digest})).data;
+              name:'dQ/dV Cycling Desktop v0.4.2 — 독립 실행파일',draft:true,
+              body:'브라우저 없이 자체 Windows 창에서 실행하는 데스크톱 프로그램입니다. Python 설치나 별도 폴더 없이 DQDVAnalyzer-Desktop.exe 하나를 실행하세요.\n\nµV(마이크로볼트) 전압 단위를 지원하고, 열 이름 또는 데이터 크기로 V/mV/µV를 자동 선택합니다. 기존 dQ/dV 표시 방식도 포함합니다.\n\nWindows 계산 테스트와 완성된 단일 EXE의 화면 생성·CSV 분석·좌표 표시 검증 통과.\n\nSHA-256: '+digest})).data;
             await github.rest.repos.uploadReleaseAsset({...repo,release_id:release.id,name:'DQDVAnalyzer-Desktop.exe',data,
               headers:{'content-type':'application/octet-stream','content-length':data.length}});
             await github.rest.repos.updateRelease({...repo,release_id:release.id,draft:false});

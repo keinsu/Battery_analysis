@@ -33,7 +33,7 @@ def normalize(raw, mapping, units, positive_charge=True):
     df['row'] = np.arange(len(raw)) + 2
     for key in ('channel', 'cycle', 'step', 'type'):
         df[key] = raw[mapping[key]].fillna('미지정').astype(str) if mapping.get(key) else '미지정'
-    for key, scale in [('voltage', {'V':1, 'mV':.001}[units['voltage']]),
+    for key, scale in [('voltage', {'V':1, 'mV':.001, 'µV':.000001}[units['voltage']]),
                        ('current', {'A':1, 'mA':.001}[units['current']]),
                        ('capacity', {'Ah':1, 'mAh':.001}[units['capacity']])]:
         df[key] = pd.to_numeric(raw[mapping[key]], errors='coerce') * scale

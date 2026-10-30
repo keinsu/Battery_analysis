@@ -40,7 +40,7 @@ class MainWindow(QtWidgets.QMainWindow):
                           ('time','시간 열'),('voltage','전압 열'),('current','전류 열'),('capacity','용량 열')]:
             combo=QtWidgets.QComboBox();self.mapping[key]=combo;form.addRow(label,combo)
             combo.currentIndexChanged.connect(self.invalidate)
-        for key,label,options in [('voltage','전압 단위',['V','mV']),('current','전류 단위',['A','mA']),
+        for key,label,options in [('voltage','전압 단위',['V','mV','µV']),('current','전류 단위',['A','mA']),
                                   ('capacity','용량 단위',['Ah','mAh']),('time','시간 형식',['H:M:S / Nd H:M:S','s'])]:
             combo=QtWidgets.QComboBox();combo.addItems(options);self.units[key]=combo;form.addRow(label,combo)
             combo.currentIndexChanged.connect(self.invalidate)
@@ -141,9 +141,23 @@ class MainWindow(QtWidgets.QMainWindow):
             if key in ('channel','step','type','time'):combo.addItem('(없음)')
             combo.addItems(list(self.raw.columns));idx=combo.findText(self.defaults[key]);combo.setCurrentIndex(max(idx,0))
         for key in ['voltage','current','capacity']:
-            self.units[key].setCurrentIndex(1 if '(m' in self.mapping[key].currentText() else 0)
+            self.units[key].setCurrentText(self.infer_unit(key, self.mapping[key].currentText()))
         self.fill_table(self.preview,self.raw.head(100))
         self.apply_mapping();self.cycles.setText(str(self.df.cycle.iloc[0]));self.analyze()
+
+    def infer_unit(self,key,column):
+        """Choose a safe initial unit from a column label, then its numeric scale."""
+        label=column.lower().replace('μ','µ')
+        if key=='voltage':
+            if any(token in label for token in ('µv','uv','microvolt')):return 'µV'
+            if any(token in label for token in ('mv','millivolt')):return 'mV'
+            values=pd.to_numeric(self.raw[column],errors='coerce').dropna()
+            if not values.empty:
+                magnitude=values.abs().median()
+                if magnitude >= 100000:return 'µV'
+                if magnitude >= 100:return 'mV'
+            return 'V'
+        return 'mA' if key=='current' and '(m' in label else 'mAh' if key=='capacity' and '(m' in label else 'A' if key=='current' else 'Ah'
 
     def apply_mapping_safe(self):
         try:self.apply_mapping()
