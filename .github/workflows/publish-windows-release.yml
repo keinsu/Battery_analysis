@@ -1,0 +1,53 @@
+name: Publish verified Windows release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: publish-dqdv-v0.3.1
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Publish previously verified Windows artifact
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const crypto = require('crypto');
+            const repo = context.repo;
+            const commit = '22f9d50287361f6b1f0f2e9cabd7580c8ce7d80a';
+            const artifactId = 12954987734;
+            const runId = 41005355156;
+            const expectedDigest = '4b526ce2f26ced753b3af33cefb2e421eb413f3591f7e06b1c8e0d06d87d1368';
+            const tag = 'v0.3.1';
+            const name = 'DQDVAnalyzer-Windows-x64.zip';
+            const run = (await github.rest.actions.getWorkflowRun({...repo, run_id: runId})).data;
+            if (run.conclusion !== 'success' || run.head_sha !== commit) throw new Error('Unverified source run');
+            const artifact = (await github.rest.actions.getArtifact({...repo, artifact_id: artifactId})).data;
+            if (artifact.expired || artifact.workflow_run.id !== runId) throw new Error('Wrong or expired artifact');
+            const download = await github.rest.actions.downloadArtifact({...repo, artifact_id: artifactId, archive_format: 'zip'});
+            const bytes = Buffer.from(download.data);
+            if (crypto.createHash('sha256').update(bytes).digest('hex') !== expectedDigest) throw new Error('Artifact checksum mismatch');
+            let release;
+            try { release = (await github.rest.repos.getReleaseByTag({...repo, tag})).data; }
+            catch (error) { if (error.status !== 404) throw error; }
+            if (!release) {
+              release = (await github.rest.repos.createRelease({...repo, tag_name: tag, target_commitish: commit,
+                name: 'dQ/dV Cycling v0.3.1 — Windows EXE', draft: true,
+                body: 'Python 설치 없이 실행하는 Windows 64-bit 패키지입니다.\n\n1. 아래 DQDVAnalyzer-Windows-x64.zip을 다운로드합니다.\n2. ZIP 전체를 압축 해제합니다.\n3. DQDVAnalyzer.exe를 실행합니다. _internal 폴더도 함께 보관하세요.\n4. 브라우저에서 CSV를 불러옵니다.\n\nCycle 선택, 좌표 표시, 확대/이동, 피크 및 CSV 저장을 지원합니다.\n\nWindows 테스트 17개, 완성된 EXE의 계산·화면 로딩·HTTP 서버 검증 통과.\n\nSHA-256: ' + expectedDigest
+              })).data;
+            }
+            let asset = release.assets.find(a => a.name === name);
+            if (!asset) {
+              if (!release.draft) throw new Error('Existing published release has no matching asset');
+              asset = (await github.rest.repos.uploadReleaseAsset({...repo, release_id: release.id, name,
+                data: bytes, headers: {'content-type': 'application/zip', 'content-length': bytes.length}
+              })).data;
+            }
+            if (asset.size !== bytes.length || asset.state !== 'uploaded') throw new Error('Incomplete uploaded asset');
+            if (release.draft) await github.rest.repos.updateRelease({...repo, release_id: release.id, draft: false});
+            core.info('DOWNLOAD_URL=' + asset.browser_download_url);

@@ -1,0 +1,31 @@
+name: Build Windows EXE
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r dqdv/requirements.txt pyinstaller==6.16.0
+      - name: Test calculations and selection
+        run: python -m pytest -q dqdv
+      - name: Build portable EXE
+        run: python -m PyInstaller --noconfirm --clean dqdv/windows.spec
+      - name: Verify packaged EXE
+        run: python dqdv/verify_windows.py dist/DQDVAnalyzer/DQDVAnalyzer.exe
+      - name: Add instructions
+        shell: pwsh
+        run: Copy-Item dqdv/WINDOWS_README.txt dist/DQDVAnalyzer/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DQDVAnalyzer-Windows-x64
+          path: dist/DQDVAnalyzer/
+          if-no-files-found: error
+          retention-days: 30
