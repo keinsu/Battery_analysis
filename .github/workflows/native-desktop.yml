@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: native-desktop-v0.4.2
+  group: native-desktop-v0.5.0
   cancel-in-progress: false
 jobs:
   build:
@@ -26,12 +26,12 @@ jobs:
       - name: Build single desktop EXE
         run: python -m PyInstaller --noconfirm --clean dqdv/native.spec
       - name: Verify frozen desktop EXE without Python on PATH
-        run: python dqdv/verify_native.py dist/DQDVAnalyzer-Desktop.exe
+        run: python dqdv/verify_native.py dist/BatteryAnalysisSuite-Desktop.exe
       - uses: actions/upload-artifact@v4
         with:
           name: Native-desktop-verified
           path: |
-            dist/DQDVAnalyzer-Desktop.exe
+            dist/BatteryAnalysisSuite-Desktop.exe
             native-verification.txt
             native-verification.png
           if-no-files-found: error
@@ -42,18 +42,18 @@ jobs:
             const fs = require('fs');
             const crypto = require('crypto');
             const repo = context.repo;
-            const tag = 'v0.4.2-native';
+            const tag = 'v0.5.0-native';
             const target = context.payload.pull_request?.head.sha || context.sha;
-            const data = fs.readFileSync('dist/DQDVAnalyzer-Desktop.exe');
+            const data = fs.readFileSync('dist/BatteryAnalysisSuite-Desktop.exe');
             const digest = crypto.createHash('sha256').update(data).digest('hex');
             let release;
             try { release=(await github.rest.repos.getReleaseByTag({...repo, tag})).data; }
             catch(e) { if(e.status!==404) throw e; }
             if(release && !release.draft) throw new Error('Release already published; do not replace existing executable');
             if(!release) release=(await github.rest.repos.createRelease({...repo, tag_name:tag,target_commitish:target,
-              name:'dQ/dV Cycling Desktop v0.4.2 — 독립 실행파일',draft:true,
-              body:'브라우저 없이 자체 Windows 창에서 실행하는 데스크톱 프로그램입니다. Python 설치나 별도 폴더 없이 DQDVAnalyzer-Desktop.exe 하나를 실행하세요.\n\nµV(마이크로볼트) 전압 단위를 지원하고, 열 이름 또는 데이터 크기로 V/mV/µV를 자동 선택합니다. 기존 dQ/dV 표시 방식도 포함합니다.\n\nWindows 계산 테스트와 완성된 단일 EXE의 화면 생성·CSV 분석·좌표 표시 검증 통과.\n\nSHA-256: '+digest})).data;
-            await github.rest.repos.uploadReleaseAsset({...repo,release_id:release.id,name:'DQDVAnalyzer-Desktop.exe',data,
+              name:'Battery Analysis Suite v0.5.0 — 독립 실행파일',draft:true,
+              body:'브라우저 없이 자체 Windows 창에서 실행하는 배터리 분석 프로그램 모음입니다. Python 설치나 별도 폴더 없이 BatteryAnalysisSuite-Desktop.exe 하나를 실행하세요.\n\n시작 화면에서 dQ/dV Analyzer와 사이클분석을 선택합니다. dQ/dV Analyzer는 현재 분석 기능을 제공하며, 사이클분석은 다음 확장 작업 공간입니다.\n\nWindows 계산 테스트와 완성된 단일 EXE의 화면 생성·CSV 분석·좌표 표시 검증 통과.\n\nSHA-256: '+digest})).data;
+            await github.rest.repos.uploadReleaseAsset({...repo,release_id:release.id,name:'BatteryAnalysisSuite-Desktop.exe',data,
               headers:{'content-type':'application/octet-stream','content-length':data.length}});
             await github.rest.repos.updateRelease({...repo,release_id:release.id,draft:false});
-            core.info('DESKTOP_DOWNLOAD=https://github.com/'+repo.owner+'/'+repo.repo+'/releases/download/'+tag+'/DQDVAnalyzer-Desktop.exe');
+            core.info('DESKTOP_DOWNLOAD=https://github.com/'+repo.owner+'/'+repo.repo+'/releases/download/'+tag+'/BatteryAnalysisSuite-Desktop.exe');

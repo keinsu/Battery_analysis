@@ -16,4 +16,4 @@ except Exception:
     raise
 assert output.read_text(encoding='utf-8')=='NATIVE_EXE_SELF_TEST_OK'
 assert output.with_suffix('.png').is_file()
-print('Native standalone EXE passed: Qt window, CSV, source parity, cycle selection, hover coordinates and invalid selection.')
+print('Native standalone EXE passed: tool selector, Qt window, CSV, source parity, cycle selection, hover coordinates and invalid selection.')

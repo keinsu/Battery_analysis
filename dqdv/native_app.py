@@ -14,10 +14,67 @@ from cycle_selection import select_cycles
 pg.setConfigOptions(background='w',foreground='#172033',antialias=True)
 
 
-class MainWindow(QtWidgets.QMainWindow):
+class SuiteWindow(QtWidgets.QMainWindow):
+    """Entry screen for the battery-analysis tools bundled in this EXE."""
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('dQ/dV Cycling — Desktop')
+        self.setWindowTitle('Battery Analysis Suite')
+        self.resize(920,600)
+        self.active_window=None
+        central=QtWidgets.QWidget();self.setCentralWidget(central)
+        layout=QtWidgets.QVBoxLayout(central);layout.setContentsMargins(54,46,54,46);layout.setSpacing(18)
+        title=QtWidgets.QLabel('Battery Analysis Suite');title.setStyleSheet('font-size:30px;font-weight:700;color:#172033;')
+        subtitle=QtWidgets.QLabel('시작할 분석 프로그램을 선택하세요. 각 프로그램은 같은 충방전 원본 데이터를 사용할 수 있습니다.')
+        subtitle.setStyleSheet('font-size:14px;color:#475569;')
+        layout.addWidget(title);layout.addWidget(subtitle);layout.addSpacing(16)
+        cards=QtWidgets.QHBoxLayout();cards.setSpacing(20);layout.addLayout(cards)
+        cards.addWidget(self.tool_card('dQ/dV Analyzer','Cycle 변화에 따른 dQ/dV 곡선, 단일 cycle 상세, peak voltage 추이를 분석합니다.','분석 시작',self.open_dqdv,True))
+        cards.addWidget(self.tool_card('사이클분석','Cycle별 충방전 용량과 효율, 전압 거동을 분석하는 다음 프로그램입니다.','프로그램 열기',self.open_cycle_analysis,False))
+        layout.addStretch()
+        note=QtWidgets.QLabel('현재 제공 기능: dQ/dV Analyzer   ·   다음 확장: 사이클분석')
+        note.setStyleSheet('color:#64748b;');layout.addWidget(note)
+
+    @staticmethod
+    def tool_card(name,description,button_text,action,ready):
+        card=QtWidgets.QFrame();card.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        card.setStyleSheet('QFrame { background:#f8fafc; border:1px solid #dbe4f0; border-radius:12px; }')
+        layout=QtWidgets.QVBoxLayout(card);layout.setContentsMargins(25,25,25,25);layout.setSpacing(12)
+        heading=QtWidgets.QLabel(name);heading.setStyleSheet('font-size:21px;font-weight:650;color:#172033;border:0;')
+        state=QtWidgets.QLabel('사용 가능' if ready else '준비 중');state.setStyleSheet('color:#2563eb;font-weight:600;border:0;' if ready else 'color:#64748b;font-weight:600;border:0;')
+        detail=QtWidgets.QLabel(description);detail.setWordWrap(True);detail.setStyleSheet('color:#475569;font-size:14px;border:0;')
+        button=QtWidgets.QPushButton(button_text);button.clicked.connect(action);button.setMinimumHeight(42)
+        button.setStyleSheet('QPushButton { background:#2563eb;color:white;border:0;border-radius:7px;font-weight:600;padding:8px 16px; } QPushButton:hover { background:#1d4ed8; }')
+        layout.addWidget(heading);layout.addWidget(state);layout.addWidget(detail);layout.addStretch();layout.addWidget(button)
+        return card
+
+    def open_dqdv(self):
+        self.active_window=MainWindow(home=self);self.hide();self.active_window.show()
+
+    def open_cycle_analysis(self):
+        self.active_window=CycleAnalysisWindow(home=self);self.hide();self.active_window.show()
+
+
+class CycleAnalysisWindow(QtWidgets.QMainWindow):
+    """Reserved independent workspace for the next analysis program."""
+    def __init__(self,home):
+        super().__init__()
+        self.home=home;self.setWindowTitle('사이클분석 — Battery Analysis Suite');self.resize(920,600)
+        central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
+        back=QtWidgets.QPushButton('← 프로그램 목록');back.clicked.connect(self.return_home);layout.addWidget(back,alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+        layout.addStretch()
+        title=QtWidgets.QLabel('사이클분석');title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter);title.setStyleSheet('font-size:30px;font-weight:700;')
+        detail=QtWidgets.QLabel('이 프로그램은 다음 기능으로 추가할 작업 공간입니다.\n현재는 dQ/dV Analyzer를 선택해 분석을 시작할 수 있습니다.')
+        detail.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter);detail.setStyleSheet('font-size:15px;color:#475569;')
+        layout.addWidget(title);layout.addWidget(detail);layout.addStretch()
+
+    def return_home(self):
+        self.home.show();self.close()
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self,home=None):
+        super().__init__()
+        self.home=home;self.setWindowTitle('dQ/dV Analyzer — Battery Analysis Suite')
         self.resize(1440,940)
         self.raw=None;self.df=None;self.results=[];self.peak_rows=[];self.settings={}
         self.traces=[[],[]];self.proxies=[];self.filename=''
@@ -26,6 +83,8 @@ class MainWindow(QtWidgets.QMainWindow):
         header=QtWidgets.QHBoxLayout()
         title=QtWidgets.QLabel('dQ/dV · Cycling');title.setStyleSheet('font-size:24px;font-weight:600;')
         header.addWidget(title);header.addStretch()
+        if self.home is not None:
+            home_btn=QtWidgets.QPushButton('프로그램 목록');home_btn.clicked.connect(self.return_home);header.addWidget(home_btn)
         self.file_label=QtWidgets.QLabel('CSV 파일을 선택하세요');header.addWidget(self.file_label)
         open_btn=QtWidgets.QPushButton('CSV 열기');open_btn.clicked.connect(self.open_file);header.addWidget(open_btn)
         outer.addLayout(header)
@@ -126,6 +185,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.points.setValue(500);self.smooth.setChecked(True);self.auto.setChecked(True)
         self.poly.setValue(3);self.prom.setValue(5);self.manual_upper.setChecked(False)
         self.absolute.setChecked(False);self.sync_controls()
+
+    def return_home(self):
+        if self.home is not None:
+            self.home.show();self.close()
 
     def open_file(self):
         path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Cycling CSV','','CSV (*.csv)')
@@ -336,6 +399,10 @@ def smoke(app,output):
     import tempfile
     from legacy_backend.dqdv import compute_dqdv
     with tempfile.TemporaryDirectory() as temp:
+        suite=SuiteWindow();suite.show();app.processEvents()
+        assert suite.windowTitle()=='Battery Analysis Suite'
+        assert len(suite.findChildren(QtWidgets.QPushButton))==2
+        suite.close()
         rows=[]
         for cycle in [1,5,10]:
             for direction,sign in [('충전',1),('방전',-1)]:
@@ -375,7 +442,7 @@ def main():
         except Exception:
             Path(output+'.error.txt').write_text(traceback.format_exc(),encoding='utf-8');raise
         return
-    window=MainWindow();window.show();sys.exit(app.exec())
+    window=SuiteWindow();window.show();sys.exit(app.exec())
 
 
 if __name__=='__main__':main()
