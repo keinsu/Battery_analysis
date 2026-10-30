@@ -330,7 +330,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status.setText(f'{len(self.results)}개 곡선 · {len(self.peak_rows)}개 피크'+(' | 없는 cycle: '+', '.join(missing) if missing else '')+(' | 제외: '+'; '.join(excluded[:8]) if excluded else ''))
             self.coordinate.setText('곡선 위로 마우스를 이동하세요.');self.tabs.setCurrentIndex(0)
         except Exception as exc:
-            self.status.setText('분석할 수 없습니다: '+str(exc))
+            self.status.setText(f'분석할 수 없습니다 ({type(exc).__name__}): {exc}')
         finally:QtWidgets.QApplication.restoreOverrideCursor()
 
     def cursor_at(self,index,pos):
@@ -387,8 +387,9 @@ class MainWindow(QtWidgets.QMainWindow):
         for direction,color,label in [('charge','#d97706','충전'),('discharge','#2563eb','방전')]:
             subset=peaks[peaks.direction==direction]
             if subset.empty:continue
-            item=self.plots[4].plot(subset.cycle.astype(float),subset.voltage_V,pen=None,symbol='o',symbolSize=8,symbolBrush=color,symbolPen=color,name=label)
-            self.traces[4].append((item,subset.cycle.to_numpy(float),subset.voltage_V.to_numpy(float),label))
+            cycles=subset.cycle.to_numpy(dtype=float);voltages=subset.voltage_V.to_numpy(dtype=float)
+            item=self.plots[4].plot(cycles,voltages,pen=None,symbol='o',symbolSize=8,symbolBrush=color,symbolPen=color,name=label)
+            self.traces[4].append((item,cycles,voltages,label))
         self.plots[4].setLabel('bottom','Cycle');self.plots[4].setLabel('left','Peak Voltage',units='V');self.plots[4].autoRange()
 
     @staticmethod
@@ -443,6 +444,10 @@ def smoke(app,output):
         assert len(win.results)==6,win.status.text()
         assert len(win.traces[2])==2 and len(win.traces[3])==2
         assert len(win.traces[4]) <= 2
+        win.peak_rows=[dict(cycle='1',direction='charge',voltage_V=3.2,dqdv_mAh_per_V=1.0),
+                       dict(cycle='1',direction='discharge',voltage_V=3.1,dqdv_mAh_per_V=-1.0),
+                       dict(cycle='2',direction='discharge',voltage_V=3.0,dqdv_mAh_per_V=-1.1)]
+        win.update_peak_trend();assert len(win.traces[4])==2
         for actual in win.results:
             cy=actual.cycle.iloc[0];dr=actual.direction.iloc[0]
             reference=pd.DataFrame(dict(Cycle=raw.TotCycle.astype(str),TypeStd=raw.Type.map({'충전':'CHARGE','방전':'DISCHARGE'}),Voltage_V=raw['Voltage(V)'],Capacity_mAh=raw['Capacity(mAh)'],_row=np.arange(len(raw))))
