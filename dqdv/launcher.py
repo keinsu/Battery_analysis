@@ -27,11 +27,13 @@ def free_port():
 
 def serve(port):
     from streamlit.web import bootstrap
-    bootstrap.run(str(resource_root()/'app.py'),False,[],{
+    options={
         'server.address':'127.0.0.1','server.port':int(port),'server.headless':True,
         'browser.gatherUsageStats':False,'server.fileWatcherType':'none',
         'global.developmentMode':False,
-    })
+    }
+    bootstrap.load_config_options(options)
+    bootstrap.run(str(resource_root()/'app.py'),False,[],options)
 
 
 def self_test():
@@ -99,3 +101,4 @@ def main():
 
 
 if __name__=='__main__':main()
+
