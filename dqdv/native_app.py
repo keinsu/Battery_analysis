@@ -265,7 +265,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_available(self,*args):
         if self.df is None:return
         cycles=list(self.df[self.df.channel==self.channel.currentText()].cycle.unique())
-        self.available.setText('입력 예: 1,5,10-50:5 / 전체\n사용 가능: '+', '.join(cycles[:16])+(' …' if len(cycles)>16 else ''))
+        if not cycles:
+            self.available.setText('추출된 Cycle이 없습니다. 열·단위 설정을 확인하세요.')
+            return
+        preview=', '.join(cycles[:16])+(' …' if len(cycles)>16 else '')
+        self.available.setText(f'추출된 전체 Cycle: {len(cycles):,}개  |  범위: {cycles[0]} ~ {cycles[-1]}\n입력 예: 1,5,10-50:5 또는 전체\n사용 가능: {preview}')
 
     def register_plot(self,plot):
         index=len(self.plots);self.plots.append(plot);self.traces.append([])
