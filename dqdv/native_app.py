@@ -138,7 +138,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs=QtWidgets.QTabWidget();split.addWidget(self.tabs);split.setSizes([330,1100])
         graph_page=QtWidgets.QWidget();gl=QtWidgets.QVBoxLayout(graph_page);self.tabs.addTab(graph_page,'그래프')
         bar=QtWidgets.QHBoxLayout();gl.addLayout(bar)
-        hint=QtWidgets.QLabel('마우스: 좌표 · 휠: 확대/축소 · 범례: 곡선 표시/숨김');bar.addWidget(hint);bar.addStretch()
+        hint=QtWidgets.QLabel('마우스: 좌표 · 휠: 확대/축소 · 범례: 대표 cycle만 표시');bar.addWidget(hint)
+        self.gradient_info=QtWidgets.QLabel('색상: 초기 cycle 파랑 → 후기 cycle 빨강 · 실선 충전 / 점선 방전');self.gradient_info.setStyleSheet('color:#475569;');bar.addWidget(self.gradient_info);bar.addStretch()
         self.vq_toggle=QtWidgets.QToolButton();self.vq_toggle.setCheckable(True);self.vq_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.vq_toggle.toggled.connect(self.toggle_raw_vq);bar.addWidget(self.vq_toggle)
         self.drag=QtWidgets.QComboBox();self.drag.addItems(['드래그 이동','영역 확대']);bar.addWidget(self.drag)
@@ -210,6 +211,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """Map selected cycles through a vivid blue-to-red spectrum."""
         ratio=index/max(total-1,1)
         return QtGui.QColor.fromHsv(round(220*(1-ratio)),230,225)
+
+    @staticmethod
+    def legend_indices(total,max_entries=5):
+        """Keep a compact, evenly spaced legend for a long cycle range."""
+        if total<=max_entries:return set(range(total))
+        return {round(i*(total-1)/(max_entries-1)) for i in range(max_entries)}
 
     def invalidate(self,*args):
         if hasattr(self,'exports'):
@@ -309,6 +316,8 @@ class MainWindow(QtWidgets.QMainWindow):
             params=dict(n_points=self.points.value(),smooth=self.smooth.isChecked(),smooth_window=None if self.auto.isChecked() else self.window.value(),
                         smooth_polyorder=self.poly.value(),peak_prominence_pct=self.prom.value()/100,upper_voltage_v=self.upper.value() if self.manual_upper.isChecked() else None)
             self.results=[];self.peak_rows=[];self.detail_records=[];excluded=[]
+            legend_indices=self.legend_indices(len(chosen));legend_direction=directions[0]
+            self.gradient_info.setText(f'색상: Cycle {chosen[0]} (파랑) → Cycle {chosen[-1]} (빨강) · 범례: {len(legend_indices)}개 대표 cycle · 실선 충전 / 점선 방전')
             self.crosshairs=[None for _ in self.plots]
             for index in range(len(self.plots)):self.reset_plot(index)
             for ci,cycle in enumerate(chosen):
@@ -316,16 +325,17 @@ class MainWindow(QtWidgets.QMainWindow):
                     r,report=calculate_cycle(channel_df,cycle,direction,**params)
                     if r is None:excluded.append(f'{cycle} {direction}: '+report['reason']);continue
                     name=f'Cycle {cycle} · '+('충전' if direction=='charge' else '방전')
+                    legend_name=name if ci in legend_indices and direction==legend_direction else None
                     color=self.cycle_color(ci,len(chosen))
                     pen=pg.mkPen(color,width=2,style=QtCore.Qt.PenStyle.SolidLine if direction=='charge' else QtCore.Qt.PenStyle.DashLine)
                     y=np.abs(r['dqdv']) if self.absolute.isChecked() else r['dqdv']
-                    item=self.plots[self.MAIN_DQDV].plot(r['voltage_grid'],y,pen=pen,name=name)
+                    item=self.plots[self.MAIN_DQDV].plot(r['voltage_grid'],y,pen=pen,name=legend_name)
                     self.traces[self.MAIN_DQDV].append((item,r['voltage_grid'],y,name))
-                    item_dvdq=self.plots[self.MAIN_DVDQ].plot(r['capacity_grid'],r['dvdq'],pen=pen,name=name)
+                    item_dvdq=self.plots[self.MAIN_DVDQ].plot(r['capacity_grid'],r['dvdq'],pen=pen,name=legend_name)
                     self.traces[self.MAIN_DVDQ].append((item_dvdq,r['capacity_grid'],r['dvdq'],name))
                     g=subset[(subset.cycle==cycle)&(subset.direction==direction)]
                     xq,yv=g.capacity.to_numpy()*1000,g.voltage.to_numpy()
-                    itemq=self.plots[self.MAIN_VQ].plot(xq,yv,pen=pen,name=name);self.traces[self.MAIN_VQ].append((itemq,xq,yv,name))
+                    itemq=self.plots[self.MAIN_VQ].plot(xq,yv,pen=pen);self.traces[self.MAIN_VQ].append((itemq,xq,yv,name))
                     if self.show_peaks.isChecked():
                         self.plots[self.MAIN_DQDV].plot(r['peak_voltage'],np.abs(r['peak_dqdv']) if self.absolute.isChecked() else r['peak_dqdv'],
                             pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
@@ -450,6 +460,7 @@ def smoke(app,output):
         suite.close()
         assert MainWindow.cycle_color(0,3).hue()==220
         assert MainWindow.cycle_color(2,3).hue()==0
+        assert MainWindow.legend_indices(20)=={0,5,10,14,19}
         rows=[]
         for cycle in [1,5,10]:
             for direction,sign in [('충전',1),('방전',-1)]:
