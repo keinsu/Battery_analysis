@@ -72,6 +72,8 @@ class CycleAnalysisWindow(QtWidgets.QMainWindow):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    MAIN_DQDV,MAIN_DVDQ,MAIN_VQ,DETAIL_DQDV,DETAIL_VQ,PEAK_TREND=range(6)
+
     def __init__(self,home=None):
         super().__init__()
         self.home=home;self.setWindowTitle('dQ/dV Analyzer — Battery Analysis Suite')
@@ -144,11 +146,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.coordinate=QtWidgets.QLabel('곡선 위로 마우스를 이동하세요.');self.coordinate.setStyleSheet('font-family:Consolas;font-size:13px;padding:5px;background:#eef4ff;');gl.addWidget(self.coordinate)
         self.plots=[];self.crosshairs=[];self.traces=[];self.proxies=[]
         self.main_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);gl.addWidget(self.main_charts)
-        for index,title in enumerate(['dQ/dV','원본 V–Q']):
+        for index,title in enumerate(['dQ/dV','dV/dQ','원본 V–Q']):
             plot=pg.PlotWidget(title=title);plot.addLegend();plot.showGrid(x=True,y=True,alpha=.2)
             for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
             self.main_charts.addWidget(plot);self.register_plot(plot)
-        self.main_charts.setSizes([550,300]);self.toggle_raw_vq(False);self.drag.currentIndexChanged.connect(self.set_drag)
+        self.main_charts.setSizes([500,500,300]);self.toggle_raw_vq(False);self.drag.currentIndexChanged.connect(self.set_drag)
         detail_page=QtWidgets.QWidget();detail_layout=QtWidgets.QVBoxLayout(detail_page);self.tabs.addTab(detail_page,'단일 Cycle 상세')
         detail_header=QtWidgets.QHBoxLayout();detail_header.addWidget(QtWidgets.QLabel('상세 Cycle'))
         self.detail_cycle=QtWidgets.QComboBox();self.detail_cycle.currentIndexChanged.connect(self.update_detail);detail_header.addWidget(self.detail_cycle)
@@ -198,10 +200,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.poly.setEnabled(self.smooth.isChecked());self.upper.setEnabled(self.manual_upper.isChecked())
 
     def toggle_raw_vq(self,visible):
-        self.plots[1].setVisible(visible)
+        self.plots[self.MAIN_VQ].setVisible(visible)
         self.vq_toggle.setArrowType(QtCore.Qt.ArrowType.DownArrow if visible else QtCore.Qt.ArrowType.RightArrow)
         self.vq_toggle.setText('원본 V–Q 숨기기' if visible else '원본 V–Q 보기')
-        self.main_charts.setSizes([550,300] if visible else [1000,0])
+        self.main_charts.setSizes([400,400,300] if visible else [500,500,0])
 
     @staticmethod
     def cycle_color(index,total):
@@ -317,20 +319,24 @@ class MainWindow(QtWidgets.QMainWindow):
                     color=self.cycle_color(ci,len(chosen))
                     pen=pg.mkPen(color,width=2,style=QtCore.Qt.PenStyle.SolidLine if direction=='charge' else QtCore.Qt.PenStyle.DashLine)
                     y=np.abs(r['dqdv']) if self.absolute.isChecked() else r['dqdv']
-                    item=self.plots[0].plot(r['voltage_grid'],y,pen=pen,name=name)
-                    self.traces[0].append((item,r['voltage_grid'],y,name))
+                    item=self.plots[self.MAIN_DQDV].plot(r['voltage_grid'],y,pen=pen,name=name)
+                    self.traces[self.MAIN_DQDV].append((item,r['voltage_grid'],y,name))
+                    item_dvdq=self.plots[self.MAIN_DVDQ].plot(r['capacity_grid'],r['dvdq'],pen=pen,name=name)
+                    self.traces[self.MAIN_DVDQ].append((item_dvdq,r['capacity_grid'],r['dvdq'],name))
                     g=subset[(subset.cycle==cycle)&(subset.direction==direction)]
                     xq,yv=g.capacity.to_numpy()*1000,g.voltage.to_numpy()
-                    itemq=self.plots[1].plot(xq,yv,pen=pen,name=name);self.traces[1].append((itemq,xq,yv,name))
+                    itemq=self.plots[self.MAIN_VQ].plot(xq,yv,pen=pen,name=name);self.traces[self.MAIN_VQ].append((itemq,xq,yv,name))
                     if self.show_peaks.isChecked():
-                        self.plots[0].plot(r['peak_voltage'],np.abs(r['peak_dqdv']) if self.absolute.isChecked() else r['peak_dqdv'],
+                        self.plots[self.MAIN_DQDV].plot(r['peak_voltage'],np.abs(r['peak_dqdv']) if self.absolute.isChecked() else r['peak_dqdv'],
                             pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
+                        self.plots[self.MAIN_DVDQ].plot(r['peak_capacity'],r['peak_dvdq'],pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
                     curve=pd.DataFrame(dict(cycle=cycle,direction=direction,voltage_V=r['voltage_grid'],capacity_mAh=r['capacity_on_vgrid'],dqdv_mAh_per_V=r['dqdv']))
                     self.results.append(curve)
                     self.detail_records.append(dict(cycle=cycle,direction=direction,result=r,raw=g,pen=pen,name=name))
                     self.peak_rows.extend(dict(cycle=cycle,direction=direction,voltage_V=float(v),dqdv_mAh_per_V=float(dq)) for v,dq in zip(r['peak_voltage'],r['peak_dqdv']))
-            self.plots[0].setLabel('bottom','Voltage',units='V');self.plots[0].setLabel('left','|dQ/dV|' if self.absolute.isChecked() else 'dQ/dV',units='mAh/V')
-            self.plots[1].setLabel('bottom','Capacity',units='mAh');self.plots[1].setLabel('left','Voltage',units='V')
+            self.plots[self.MAIN_DQDV].setLabel('bottom','Voltage',units='V');self.plots[self.MAIN_DQDV].setLabel('left','|dQ/dV|' if self.absolute.isChecked() else 'dQ/dV',units='mAh/V')
+            self.plots[self.MAIN_DVDQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.MAIN_DVDQ].setLabel('left','dV/dQ',units='V/mAh')
+            self.plots[self.MAIN_VQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.MAIN_VQ].setLabel('left','Voltage',units='V')
             self.fill_table(self.peak_table,pd.DataFrame(self.peak_rows,columns=['cycle','direction','voltage_V','dqdv_mAh_per_V']))
             self.detail_cycle.blockSignals(True);self.detail_cycle.clear();self.detail_cycle.addItems(chosen);self.detail_cycle.blockSignals(False)
             self.update_detail();self.update_peak_trend()
@@ -362,8 +368,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.crosshairs:
             self.crosshairs[index][0].setPos(x);self.crosshairs[index][1].setPos(y)
             for line in self.crosshairs[index]:line.show()
-        if index in (0,2):self.coordinate.setText(f'{name} | Voltage {x:.5f} V | dQ/dV {y:.4f} mAh/V')
-        elif index in (1,3):self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | Voltage {y:.5f} V')
+        if index in (self.MAIN_DQDV,self.DETAIL_DQDV):self.coordinate.setText(f'{name} | Voltage {x:.5f} V | dQ/dV {y:.4f} mAh/V')
+        elif index==self.MAIN_DVDQ:self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | dV/dQ {y:.6f} V/mAh')
+        elif index in (self.MAIN_VQ,self.DETAIL_VQ):self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | Voltage {y:.5f} V')
         else:self.coordinate.setText(f'{name} | Cycle {x:.0f} | Peak Voltage {y:.5f} V')
 
     def set_drag(self,*args):
@@ -374,34 +381,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def update_detail(self,*args):
         if not hasattr(self,'detail_records') or not self.detail_cycle.currentText():return
-        for index in (2,3):self.reset_plot(index)
+        for index in (self.DETAIL_DQDV,self.DETAIL_VQ):self.reset_plot(index)
         cycle=self.detail_cycle.currentText()
         for record in self.detail_records:
             if record['cycle']!=cycle:continue
             result,raw,pen,name=record['result'],record['raw'],record['pen'],record['name']
             y=np.abs(result['dqdv']) if self.absolute.isChecked() else result['dqdv']
-            item=self.plots[2].plot(result['voltage_grid'],y,pen=pen,name=name)
-            self.traces[2].append((item,result['voltage_grid'],y,name))
+            item=self.plots[self.DETAIL_DQDV].plot(result['voltage_grid'],y,pen=pen,name=name)
+            self.traces[self.DETAIL_DQDV].append((item,result['voltage_grid'],y,name))
             xq,yv=raw.capacity.to_numpy()*1000,raw.voltage.to_numpy()
-            item=self.plots[3].plot(xq,yv,pen=pen,name=name)
-            self.traces[3].append((item,xq,yv,name))
+            item=self.plots[self.DETAIL_VQ].plot(xq,yv,pen=pen,name=name)
+            self.traces[self.DETAIL_VQ].append((item,xq,yv,name))
             if self.show_peaks.isChecked():
-                self.plots[2].plot(result['peak_voltage'],np.abs(result['peak_dqdv']) if self.absolute.isChecked() else result['peak_dqdv'],pen=None,symbol='o',symbolSize=8,symbolPen=pen.color(),symbolBrush='w')
-        self.plots[2].setLabel('bottom','Voltage',units='V');self.plots[2].setLabel('left','dQ/dV',units='mAh/V')
-        self.plots[3].setLabel('bottom','Capacity',units='mAh');self.plots[3].setLabel('left','Voltage',units='V')
-        self.plots[2].autoRange();self.plots[3].autoRange()
+                self.plots[self.DETAIL_DQDV].plot(result['peak_voltage'],np.abs(result['peak_dqdv']) if self.absolute.isChecked() else result['peak_dqdv'],pen=None,symbol='o',symbolSize=8,symbolPen=pen.color(),symbolBrush='w')
+        self.plots[self.DETAIL_DQDV].setLabel('bottom','Voltage',units='V');self.plots[self.DETAIL_DQDV].setLabel('left','dQ/dV',units='mAh/V')
+        self.plots[self.DETAIL_VQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.DETAIL_VQ].setLabel('left','Voltage',units='V')
+        self.plots[self.DETAIL_DQDV].autoRange();self.plots[self.DETAIL_VQ].autoRange()
 
     def update_peak_trend(self):
-        self.reset_plot(4)
+        self.reset_plot(self.PEAK_TREND)
         if not self.peak_rows:return
         peaks=pd.DataFrame(self.peak_rows)
         for direction,color,label in [('charge','#d97706','충전'),('discharge','#2563eb','방전')]:
             subset=peaks[peaks.direction==direction]
             if subset.empty:continue
             cycles=subset.cycle.to_numpy(dtype=float);voltages=subset.voltage_V.to_numpy(dtype=float)
-            item=self.plots[4].plot(cycles,voltages,pen=None,symbol='o',symbolSize=8,symbolBrush=color,symbolPen=color,name=label)
-            self.traces[4].append((item,cycles,voltages,label))
-        self.plots[4].setLabel('bottom','Cycle');self.plots[4].setLabel('left','Peak Voltage',units='V');self.plots[4].autoRange()
+            item=self.plots[self.PEAK_TREND].plot(cycles,voltages,pen=None,symbol='o',symbolSize=8,symbolBrush=color,symbolPen=color,name=label)
+            self.traces[self.PEAK_TREND].append((item,cycles,voltages,label))
+        self.plots[self.PEAK_TREND].setLabel('bottom','Cycle');self.plots[self.PEAK_TREND].setLabel('left','Peak Voltage',units='V');self.plots[self.PEAK_TREND].autoRange()
 
     @staticmethod
     def fill_table(table,frame):
@@ -429,7 +436,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def export_png(self):
         path,_=QtWidgets.QFileDialog.getSaveFileName(self,'dQ/dV 그래프 저장','dqdv.png','PNG (*.png)')
         if path:
-            try:pg.exporters.ImageExporter(self.plots[0].plotItem).export(path)
+            try:pg.exporters.ImageExporter(self.plots[self.MAIN_DQDV].plotItem).export(path)
             except Exception as exc:QtWidgets.QMessageBox.warning(self,'저장 실패',str(exc))
 
 
@@ -453,12 +460,13 @@ def smoke(app,output):
         win=MainWindow();win.show();app.processEvents();win.load_file(path)
         win.cycles.setText('1,5,10');win.analyze();app.processEvents()
         assert len(win.results)==6,win.status.text()
-        assert len(win.traces[2])==2 and len(win.traces[3])==2
-        assert len(win.traces[4]) <= 2
+        assert len(win.traces[win.MAIN_DVDQ])==6
+        assert len(win.traces[win.DETAIL_DQDV])==2 and len(win.traces[win.DETAIL_VQ])==2
+        assert len(win.traces[win.PEAK_TREND]) <= 2
         win.peak_rows=[dict(cycle='1',direction='charge',voltage_V=3.2,dqdv_mAh_per_V=1.0),
                        dict(cycle='1',direction='discharge',voltage_V=3.1,dqdv_mAh_per_V=-1.0),
                        dict(cycle='2',direction='discharge',voltage_V=3.0,dqdv_mAh_per_V=-1.1)]
-        win.update_peak_trend();assert len(win.traces[4])==2
+        win.update_peak_trend();assert len(win.traces[win.PEAK_TREND])==2
         for actual in win.results:
             cy=actual.cycle.iloc[0];dr=actual.direction.iloc[0]
             reference=pd.DataFrame(dict(Cycle=raw.TotCycle.astype(str),TypeStd=raw.Type.map({'충전':'CHARGE','방전':'DISCHARGE'}),Voltage_V=raw['Voltage(V)'],Capacity_mAh=raw['Capacity(mAh)'],_row=np.arange(len(raw))))
