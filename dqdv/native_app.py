@@ -241,12 +241,44 @@ class MainWindow(QtWidgets.QMainWindow):
         for key,combo in self.mapping.items():
             combo.clear()
             if key in ('channel','step','type','time'):combo.addItem('(없음)')
-            combo.addItems(list(self.raw.columns));idx=combo.findText(self.defaults[key]);combo.setCurrentIndex(max(idx,0))
+            combo.addItems(list(self.raw.columns))
+            selected=self.best_mapping_column(key)
+            combo.setCurrentIndex(combo.findText(selected) if selected is not None else -1)
         for key in ['voltage','current','capacity']:
             self.units[key].setCurrentText(self.infer_unit(key, self.mapping[key].currentText()))
         self.file_label.setText(f'{Path(path).name} · {len(self.raw):,}행 · {encoding} · 전압: {self.mapping["voltage"].currentText()} / {self.units["voltage"].currentText()}')
         self.fill_table(self.preview,self.raw.head(100))
         self.apply_mapping();self.cycles.setText(str(self.df.cycle.iloc[0]));self.analyze()
+
+    @staticmethod
+    def normalized_column_name(value):
+        return ''.join(char for char in str(value).lower() if char.isalnum())
+
+    def best_mapping_column(self,key):
+        """Match a meaningful measurement column; never fall back to DataSequence."""
+        columns=[str(column) for column in self.raw.columns]
+        default=self.defaults[key]
+        if default in columns:return default
+        default_norm=self.normalized_column_name(default)
+        for column in columns:
+            if self.normalized_column_name(column)==default_norm:return column
+        aliases={
+            'channel':['channel','channelno','ch'], 'cycle':['totcycle','cycle','cyc'],
+            'step':['stepno','step','stage'], 'type':['type','mode','state','status'],
+            'time':['tottime','steptime','elapsedtime','time'],
+            'voltage':['voltage','volt','vtg','전압'], 'current':['current','curr','crt','전류'],
+            'capacity':['capacity','capa','cap','용량'],
+        }[key]
+        best_score,best_column=-1,None
+        for column in columns:
+            name=self.normalized_column_name(column)
+            for order,alias in enumerate(aliases):
+                if name.startswith(alias):score=100-order
+                elif alias in name:score=70-order
+                else:continue
+                if key=='voltage' and any(token in name for token in ('avg','mean','set')):score-=40
+                if score>best_score:best_score,best_column=score,column
+        return best_column
 
     def infer_unit(self,key,column):
         """Use numeric plausibility before a possibly incorrect column-unit suffix."""
@@ -273,7 +305,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def apply_mapping(self):
         if self.raw is None:raise ValueError('CSV를 먼저 불러오세요.')
-        self.mapping_values={k:(None if w.currentText()=='(없음)' else w.currentText()) for k,w in self.mapping.items()}
+        self.mapping_values={k:(None if w.currentText() in ('(없음)','') else w.currentText()) for k,w in self.mapping.items()}
+        required={'cycle':'Cycle 열','voltage':'전압 열','current':'전류 열','capacity':'용량 열'}
+        missing=[label for key,label in required.items() if not self.mapping_values[key]]
+        if missing:raise ValueError('자동으로 찾지 못한 항목: '+', '.join(missing)+' — 열 · 단위 설정 보기에서 선택하세요.')
         self.unit_values={k:w.currentText() for k,w in self.units.items()}
         self.df=normalize(self.raw,self.mapping_values,self.unit_values,self.positive.isChecked())
         old=self.channel.currentText();self.channel.clear();self.channel.addItems(list(self.df.channel.unique()))
@@ -462,9 +497,10 @@ def smoke(app,output):
         suite.close()
         assert MainWindow.cycle_color(0,3).hue()==220
         assert MainWindow.cycle_color(2,3).hue()==0
-        unit_probe=MainWindow();unit_probe.raw=pd.DataFrame({'mv':[1113.2,1114.1],'uv':[1_113_200,1_114_100]})
-        assert unit_probe.infer_unit('voltage','mv')=='mV'
-        assert unit_probe.infer_unit('voltage','uv')=='µV'
+        unit_probe=MainWindow();unit_probe.raw=pd.DataFrame({'DataSequence':[1_113_200,1_114_100],'Voltage(mV)':[1113.2,1114.1],'Voltage(uV)':[1_113_200,1_114_100]})
+        assert unit_probe.best_mapping_column('voltage')=='Voltage(mV)'
+        assert unit_probe.infer_unit('voltage','Voltage(mV)')=='mV'
+        assert unit_probe.infer_unit('voltage','Voltage(uV)')=='µV'
         unit_probe.close()
         rows=[]
         for cycle in [1,5,10]:
