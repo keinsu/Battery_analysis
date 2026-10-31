@@ -1,4 +1,4 @@
-# Battery Analysis Suite v0.6.0
+# Battery Analysis Suite v0.6.1
 
 `BatteryAnalysisSuite-Desktop.exe` 하나를 다운로드하고 실행합니다. Python 설치, 브라우저, 웹 서버, 별도 _internal 폴더가 필요하지 않습니다. 첫 실행 시 분석 프로그램 선택 화면이 나타나며, 포함된 런타임을 임시 폴더에 푸는 동안 잠시 걸릴 수 있습니다.
 
@@ -22,6 +22,8 @@ Cycle 입력칸 아래에 현재 분석 채널에서 추출된 전체 cycle 수�
 그래프 탭의 좌표·상태 표시 영역은 한 줄 높이로 유지되며 남는 세로 공간은 그래프에 사용됩니다.
 
 다수 cycle을 선택하면 그래프 상단에 시작·끝 cycle 번호가 붙은 파랑→빨강 그라데이션 막대가 표시됩니다. 충전은 실선, 방전은 점선입니다.
+
+dQ/dV와 dV/dQ는 모두 위쪽 peak와 아래쪽 valley를 검출합니다. 그래프에서 ○는 peak, ×는 valley입니다. 피크 표와 피크 CSV에는 `metric`(dQ/dV 또는 dV/dQ), `kind`(peak 또는 valley), 축 좌표와 미분값이 저장됩니다.
 
 자동 열 매핑은 `Voltage(mV)`·`Voltage(uV)` 등 실제 전압 열을 우선 선택하며 `DataSequence` 같은 순번 열을 전압으로 사용하지 않습니다. 전압 단위 자동 판정은 데이터 크기와 열 이름이 충돌할 경우 데이터 크기를 우선합니다. 자동 선택이 맞지 않으면 `열 · 단위 설정 보기`에서 전압 단위를 직접 바꾼 뒤 다시 적용할 수 있습니다.
 

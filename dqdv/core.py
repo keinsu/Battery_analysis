@@ -3,6 +3,7 @@ import io
 import re
 import numpy as np
 import pandas as pd
+from scipy.signal import find_peaks
 from legacy_backend.dqdv import compute_dqdv, get_qv_curve, _cc_region_only
 
 
@@ -72,6 +73,21 @@ def legacy_frame(df):
         'Voltage_V':df.voltage, 'Capacity_mAh':df.capacity*1000, '_row':df.row})
 
 
+def detect_extrema(axis, values, prominence_pct=.05, min_distance=5):
+    """Return both local maxima and minima on a derivative curve."""
+    axis=np.asarray(axis,dtype=float);values=np.asarray(values,dtype=float)
+    finite=np.isfinite(axis)&np.isfinite(values)
+    axis,values=axis[finite],values[finite]
+    if len(values)<5:return (np.array([]),np.array([]),np.array([]),np.array([]))
+    edge=max(2,int(len(values)*.01))
+    prominence=float(prominence_pct)*(np.nanmax(values)-np.nanmin(values)+1e-9)
+    maxima,_=find_peaks(values,prominence=prominence,distance=min_distance)
+    minima,_=find_peaks(-values,prominence=prominence,distance=min_distance)
+    maxima=maxima[(maxima>=edge)&(maxima<len(values)-edge)]
+    minima=minima[(minima>=edge)&(minima<len(values)-edge)]
+    return axis[maxima],values[maxima],axis[minima],values[minima]
+
+
 def calculate_cycle(df, cycle, direction, **settings):
     frame=legacy_frame(df)
     raw=get_qv_curve(frame,cycle,direction)
@@ -86,5 +102,11 @@ def calculate_cycle(df, cycle, direction, **settings):
         span=float(np.nanmax(v)-np.nanmin(v)) if len(v) else 0.0
         report.update(cv_excluded_rows=len(raw)-len(v), unique_voltages=len(np.unique(v)),voltage_span_V=span)
     result=compute_dqdv(frame,cycle,direction,**settings)
+    if result is not None:
+        sensitivity=settings.get('peak_prominence_pct') or .05
+        dq_peak_x,dq_peak_y,dq_valley_x,dq_valley_y=detect_extrema(result['voltage_grid'],result['dqdv'],sensitivity)
+        dv_peak_x,dv_peak_y,dv_valley_x,dv_valley_y=detect_extrema(result['capacity_grid'],result['dvdq'],sensitivity)
+        result.update(dqdv_peak_voltage=dq_peak_x,dqdv_peak_value=dq_peak_y,dqdv_valley_voltage=dq_valley_x,dqdv_valley_value=dq_valley_y,
+                      dvdq_peak_capacity=dv_peak_x,dvdq_peak_value=dv_peak_y,dvdq_valley_capacity=dv_valley_x,dvdq_valley_value=dv_valley_y)
     report['reason']='계산 완료' if result is not None else '유효 행 또는 고유 전압 5개 미만'
     return result, report

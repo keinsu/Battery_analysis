@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from core import normalize, calculate_cycle, elapsed
+from core import normalize, calculate_cycle, elapsed, detect_extrema
 from legacy_backend.dqdv import compute_dqdv, _cc_region_only, _dedup_monotonic
 
 
@@ -60,6 +60,13 @@ def test_microvolt_input_is_converted_to_volts():
     df=normalize(raw,dict(voltage='v',capacity='q',current='i',cycle='c',type='t'),dict(voltage='µV',current='mA',capacity='mAh'))
     r,_=calculate_cycle(df,'1','discharge')
     np.testing.assert_allclose(r['voltage_grid'][[0,-1]],[3,4.2])
+
+
+def test_derivative_extrema_finds_peaks_and_valleys():
+    axis=np.linspace(0,2*np.pi,201);values=np.sin(axis)
+    peak_x,peak_y,valley_x,valley_y=detect_extrema(axis,values,.1)
+    assert len(peak_x)==1 and len(valley_x)==1
+    assert peak_y[0]>.9 and valley_y[0]<-.9
 
 
 def test_cycle_aggregation_with_resets_matches_original():
