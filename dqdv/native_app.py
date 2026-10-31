@@ -119,7 +119,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto=QtWidgets.QCheckBox('윈도 자동');self.auto.setChecked(True);form.addRow(self.auto)
         self.window=self.spin(5,19999,21,2);form.addRow('윈도 (포인트)',self.window);self.lock_wheel(self.window)
         self.poly=self.spin(1,10,3);form.addRow('다항식 차수',self.poly);self.lock_wheel(self.poly)
-        self.prom=QtWidgets.QDoubleSpinBox();self.prom.setRange(.01,100);self.prom.setValue(5);self.prom.setSuffix(' %');form.addRow('피크 민감도',self.prom);self.lock_wheel(self.prom)
+        self.prom=QtWidgets.QDoubleSpinBox();self.prom.setRange(.01,100);self.prom.setValue(3);self.prom.setSuffix(' %');form.addRow('피크 민감도',self.prom);self.lock_wheel(self.prom)
         self.manual_upper=QtWidgets.QCheckBox('충전 상한전압 직접 지정');form.addRow(self.manual_upper)
         self.upper=QtWidgets.QDoubleSpinBox();self.upper.setRange(-100,1000);self.upper.setDecimals(4);self.upper.setValue(4.2);self.upper.setSuffix(' V');form.addRow(self.upper);self.lock_wheel(self.upper)
         self.absolute=QtWidgets.QCheckBox('방전 dQ/dV 절댓값 표시');form.addRow(self.absolute)
@@ -137,16 +137,18 @@ class MainWindow(QtWidgets.QMainWindow):
         graph_page=QtWidgets.QWidget();gl=QtWidgets.QVBoxLayout(graph_page);self.tabs.addTab(graph_page,'그래프')
         bar=QtWidgets.QHBoxLayout();gl.addLayout(bar)
         hint=QtWidgets.QLabel('마우스: 좌표 · 휠: 확대/축소 · 범례: 곡선 표시/숨김');bar.addWidget(hint);bar.addStretch()
+        self.vq_toggle=QtWidgets.QToolButton();self.vq_toggle.setCheckable(True);self.vq_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.vq_toggle.toggled.connect(self.toggle_raw_vq);bar.addWidget(self.vq_toggle)
         self.drag=QtWidgets.QComboBox();self.drag.addItems(['드래그 이동','영역 확대']);bar.addWidget(self.drag)
         reset=QtWidgets.QPushButton('전체 범위');reset.clicked.connect(self.reset_axes);bar.addWidget(reset)
         self.coordinate=QtWidgets.QLabel('곡선 위로 마우스를 이동하세요.');self.coordinate.setStyleSheet('font-family:Consolas;font-size:13px;padding:5px;background:#eef4ff;');gl.addWidget(self.coordinate)
         self.plots=[];self.crosshairs=[];self.traces=[];self.proxies=[]
-        charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);gl.addWidget(charts)
+        self.main_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);gl.addWidget(self.main_charts)
         for index,title in enumerate(['dQ/dV','원본 V–Q']):
             plot=pg.PlotWidget(title=title);plot.addLegend();plot.showGrid(x=True,y=True,alpha=.2)
             for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
-            charts.addWidget(plot);self.register_plot(plot)
-        charts.setSizes([550,300]);self.drag.currentIndexChanged.connect(self.set_drag)
+            self.main_charts.addWidget(plot);self.register_plot(plot)
+        self.main_charts.setSizes([550,300]);self.toggle_raw_vq(False);self.drag.currentIndexChanged.connect(self.set_drag)
         detail_page=QtWidgets.QWidget();detail_layout=QtWidgets.QVBoxLayout(detail_page);self.tabs.addTab(detail_page,'단일 Cycle 상세')
         detail_header=QtWidgets.QHBoxLayout();detail_header.addWidget(QtWidgets.QLabel('상세 Cycle'))
         self.detail_cycle=QtWidgets.QComboBox();self.detail_cycle.currentIndexChanged.connect(self.update_detail);detail_header.addWidget(self.detail_cycle)
@@ -195,12 +197,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.window.setEnabled(self.smooth.isChecked() and not self.auto.isChecked())
         self.poly.setEnabled(self.smooth.isChecked());self.upper.setEnabled(self.manual_upper.isChecked())
 
+    def toggle_raw_vq(self,visible):
+        self.plots[1].setVisible(visible)
+        self.vq_toggle.setArrowType(QtCore.Qt.ArrowType.DownArrow if visible else QtCore.Qt.ArrowType.RightArrow)
+        self.vq_toggle.setText('원본 V–Q 숨기기' if visible else '원본 V–Q 보기')
+        self.main_charts.setSizes([550,300] if visible else [1000,0])
+
     @staticmethod
     def cycle_color(index,total):
-        """Map the selected cycle order from red (early) to blue (late)."""
+        """Map selected cycles through a vivid blue-to-red spectrum."""
         ratio=index/max(total-1,1)
-        start,end=QtGui.QColor('#dc2626'),QtGui.QColor('#2563eb')
-        return QtGui.QColor(round(start.red()+(end.red()-start.red())*ratio),round(start.green()+(end.green()-start.green())*ratio),round(start.blue()+(end.blue()-start.blue())*ratio))
+        return QtGui.QColor.fromHsv(round(220*(1-ratio)),230,225)
 
     def invalidate(self,*args):
         if hasattr(self,'exports'):
@@ -209,7 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def restore_defaults(self):
         self.points.setValue(500);self.smooth.setChecked(True);self.auto.setChecked(True)
-        self.poly.setValue(3);self.prom.setValue(5);self.manual_upper.setChecked(False)
+        self.poly.setValue(3);self.prom.setValue(3);self.manual_upper.setChecked(False)
         self.absolute.setChecked(False);self.sync_controls()
 
     def return_home(self):
@@ -434,8 +441,8 @@ def smoke(app,output):
         assert suite.windowTitle()=='Battery Analysis Suite'
         assert len(suite.findChildren(QtWidgets.QPushButton))==2
         suite.close()
-        assert MainWindow.cycle_color(0,3).name()=='#dc2626'
-        assert MainWindow.cycle_color(2,3).name()=='#2563eb'
+        assert MainWindow.cycle_color(0,3).hue()==220
+        assert MainWindow.cycle_color(2,3).hue()==0
         rows=[]
         for cycle in [1,5,10]:
             for direction,sign in [('충전',1),('방전',-1)]:
