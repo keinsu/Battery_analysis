@@ -90,7 +90,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_label=QtWidgets.QLabel('CSV 파일을 선택하세요');header.addWidget(self.file_label)
         open_btn=QtWidgets.QPushButton('CSV 열기');open_btn.clicked.connect(self.open_file);header.addWidget(open_btn)
         outer.addLayout(header)
-        split=QtWidgets.QSplitter();outer.addWidget(split)
+        split=QtWidgets.QSplitter();outer.addWidget(split,1)
         scroll=QtWidgets.QScrollArea();scroll.setWidgetResizable(True);scroll.setMinimumWidth(310)
         panel=QtWidgets.QWidget();form=QtWidgets.QFormLayout(panel);scroll.setWidget(panel);split.addWidget(scroll)
         self.mapping={};self.units={};self.no_wheel_widgets=[]
@@ -143,9 +143,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.vq_toggle.toggled.connect(self.toggle_raw_vq);bar.addWidget(self.vq_toggle)
         self.drag=QtWidgets.QComboBox();self.drag.addItems(['드래그 이동','영역 확대']);bar.addWidget(self.drag)
         reset=QtWidgets.QPushButton('전체 범위');reset.clicked.connect(self.reset_axes);bar.addWidget(reset)
-        self.coordinate=QtWidgets.QLabel('곡선 위로 마우스를 이동하세요.');self.coordinate.setStyleSheet('font-family:Consolas;font-size:13px;padding:5px;background:#eef4ff;');gl.addWidget(self.coordinate)
+        self.coordinate=QtWidgets.QLabel('곡선 위로 마우스를 이동하세요.');self.coordinate.setStyleSheet('font-family:Consolas;font-size:13px;padding:5px;background:#eef4ff;');self.coordinate.setFixedHeight(32);self.coordinate.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,QtWidgets.QSizePolicy.Policy.Fixed);gl.addWidget(self.coordinate)
         self.plots=[];self.crosshairs=[];self.traces=[];self.proxies=[]
-        self.main_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);gl.addWidget(self.main_charts)
+        self.main_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);gl.addWidget(self.main_charts,1)
         for index,title in enumerate(['dQ/dV','dV/dQ','원본 V–Q']):
             plot=pg.PlotWidget(title=title);plot.addLegend();plot.showGrid(x=True,y=True,alpha=.2)
             for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
@@ -155,7 +155,7 @@ class MainWindow(QtWidgets.QMainWindow):
         detail_header=QtWidgets.QHBoxLayout();detail_header.addWidget(QtWidgets.QLabel('상세 Cycle'))
         self.detail_cycle=QtWidgets.QComboBox();self.detail_cycle.currentIndexChanged.connect(self.update_detail);detail_header.addWidget(self.detail_cycle)
         detail_header.addWidget(QtWidgets.QLabel('선택한 한 cycle의 충전·방전 V–Q와 dQ/dV를 함께 표시합니다.'));detail_header.addStretch();detail_layout.addLayout(detail_header)
-        detail_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);detail_layout.addWidget(detail_charts)
+        detail_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);detail_layout.addWidget(detail_charts,1)
         for title in ['dQ/dV · 단일 Cycle','V–Q · 단일 Cycle']:
             plot=pg.PlotWidget(title=title);plot.addLegend();plot.showGrid(x=True,y=True,alpha=.2)
             for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
@@ -164,7 +164,7 @@ class MainWindow(QtWidgets.QMainWindow):
         peak_page=QtWidgets.QWidget();peak_layout=QtWidgets.QVBoxLayout(peak_page);self.tabs.addTab(peak_page,'피크 전압 추이')
         peak_layout.addWidget(QtWidgets.QLabel('선택한 cycle에서 검출된 모든 피크의 전압 위치입니다. 피크 민감도 설정이 그대로 적용됩니다.'))
         peak_plot=pg.PlotWidget(title='Cycle별 dQ/dV Peak Voltage');peak_plot.addLegend();peak_plot.showGrid(x=True,y=True,alpha=.2)
-        peak_plot.setLabel('bottom','Cycle');peak_plot.setLabel('left','Peak Voltage',units='V');peak_layout.addWidget(peak_plot);self.register_plot(peak_plot)
+        peak_plot.setLabel('bottom','Cycle');peak_plot.setLabel('left','Peak Voltage',units='V');peak_layout.addWidget(peak_plot,1);self.register_plot(peak_plot)
         self.peak_table=QtWidgets.QTableWidget();self.tabs.addTab(self.peak_table,'피크 표')
         self.segment_view=QtWidgets.QTableWidget();self.tabs.addTab(self.segment_view,'구간 / 품질')
         self.preview=QtWidgets.QTableWidget();self.tabs.addTab(self.preview,'원본 미리보기')
@@ -172,7 +172,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for text,action in [('곡선 CSV',lambda:self.export_csv(False)),('피크 CSV',lambda:self.export_csv(True)),
                             ('분석 설정 JSON',self.export_settings),('그래프 PNG',self.export_png)]:
             b=QtWidgets.QPushButton(text);b.clicked.connect(action);export_bar.addWidget(b);self.exports.append(b)
-        self.status=QtWidgets.QLabel('CSV를 불러오세요.');self.status.setWordWrap(True);outer.addWidget(self.status)
+        self.status=QtWidgets.QLabel('CSV를 불러오세요.');self.status.setWordWrap(False);self.status.setFixedHeight(28);self.status.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,QtWidgets.QSizePolicy.Policy.Fixed);outer.addWidget(self.status)
         self.sync_controls();self.invalidate()
 
     @staticmethod
