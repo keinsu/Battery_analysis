@@ -6,10 +6,6 @@ import pandas as pd
 from legacy_backend.dqdv import compute_dqdv, get_qv_curve, _cc_region_only
 
 
-# dQ/dV is not meaningful when a capacity-changing segment is effectively CV.
-MIN_DQDV_VOLTAGE_SPAN_V = 0.005
-
-
 def read_csv(data):
     for encoding in ('utf-8-sig', 'cp949', 'utf-16'):
         try:
@@ -89,8 +85,6 @@ def calculate_cycle(df, cycle, direction, **settings):
             v,q=_cc_region_only(v,q,settings.get('upper_voltage_v'))
         span=float(np.nanmax(v)-np.nanmin(v)) if len(v) else 0.0
         report.update(cv_excluded_rows=len(raw)-len(v), unique_voltages=len(np.unique(v)),voltage_span_V=span)
-        if span < MIN_DQDV_VOLTAGE_SPAN_V:
-            return None, dict(report,reason=f'전압 범위 {span*1000:.3f} mV가 너무 좁아 dQ/dV 분석 제외')
     result=compute_dqdv(frame,cycle,direction,**settings)
     report['reason']='계산 완료' if result is not None else '유효 행 또는 고유 전압 5개 미만'
     return result, report

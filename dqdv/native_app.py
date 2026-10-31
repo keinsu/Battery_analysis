@@ -237,27 +237,33 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def load_file(self,path):
         self.raw,encoding=read_csv(Path(path).read_bytes());self.filename=str(path)
-        self.file_label.setText(f'{Path(path).name} · {len(self.raw):,}행 · {encoding}')
+        self.encoding=encoding
         for key,combo in self.mapping.items():
             combo.clear()
             if key in ('channel','step','type','time'):combo.addItem('(없음)')
             combo.addItems(list(self.raw.columns));idx=combo.findText(self.defaults[key]);combo.setCurrentIndex(max(idx,0))
         for key in ['voltage','current','capacity']:
             self.units[key].setCurrentText(self.infer_unit(key, self.mapping[key].currentText()))
+        self.file_label.setText(f'{Path(path).name} · {len(self.raw):,}행 · {encoding} · 전압: {self.mapping["voltage"].currentText()} / {self.units["voltage"].currentText()}')
         self.fill_table(self.preview,self.raw.head(100))
         self.apply_mapping();self.cycles.setText(str(self.df.cycle.iloc[0]));self.analyze()
 
     def infer_unit(self,key,column):
-        """Choose a safe initial unit from a column label, then its numeric scale."""
+        """Use numeric plausibility before a possibly incorrect column-unit suffix."""
         label=column.lower().replace('μ','µ')
         if key=='voltage':
-            if any(token in label for token in ('µv','uv','microvolt')):return 'µV'
-            if any(token in label for token in ('mv','millivolt')):return 'mV'
             values=pd.to_numeric(self.raw[column],errors='coerce').dropna()
             if not values.empty:
-                magnitude=values.abs().median()
+                magnitude=values.abs().replace(0,np.nan).median()
+                plausible=[]
+                for unit,scale in [('V',1),('mV',.001),('µV',.000001)]:
+                    if pd.notna(magnitude) and .05 <= magnitude*scale <= 20:
+                        plausible.append(unit)
+                if len(plausible)==1:return plausible[0]
                 if magnitude >= 100000:return 'µV'
                 if magnitude >= 100:return 'mV'
+            if any(token in label for token in ('µv','uv','microvolt')):return 'µV'
+            if any(token in label for token in ('mv','millivolt')):return 'mV'
             return 'V'
         return 'mA' if key=='current' and '(m' in label else 'mAh' if key=='capacity' and '(m' in label else 'A' if key=='current' else 'Ah'
 
@@ -456,6 +462,10 @@ def smoke(app,output):
         suite.close()
         assert MainWindow.cycle_color(0,3).hue()==220
         assert MainWindow.cycle_color(2,3).hue()==0
+        unit_probe=MainWindow();unit_probe.raw=pd.DataFrame({'mv':[1113.2,1114.1],'uv':[1_113_200,1_114_100]})
+        assert unit_probe.infer_unit('voltage','mv')=='mV'
+        assert unit_probe.infer_unit('voltage','uv')=='µV'
+        unit_probe.close()
         rows=[]
         for cycle in [1,5,10]:
             for direction,sign in [('충전',1),('방전',-1)]:

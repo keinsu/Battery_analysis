@@ -55,14 +55,6 @@ def test_linear_discharge_units():
     assert elapsed('12d 18:44:38.75')==1104278.75
 
 
-def test_near_constant_voltage_segment_is_excluded_from_dqdv():
-    raw=pd.DataFrame(dict(v=np.linspace(1.0490,1.0499,101),q=np.linspace(0,1000,101),i=1000,c=1,t='충전'))
-    df=normalize(raw,dict(voltage='v',capacity='q',current='i',cycle='c',type='t'),dict(voltage='V',current='mA',capacity='mAh'))
-    result,report=calculate_cycle(df,'1','charge')
-    assert result is None
-    assert '전압 범위' in report['reason']
-
-
 def test_microvolt_input_is_converted_to_volts():
     raw=pd.DataFrame(dict(v=np.linspace(4_200_000,3_000_000,101),q=np.linspace(0,1000,101),i=-1000,c=1,t='방전'))
     df=normalize(raw,dict(voltage='v',capacity='q',current='i',cycle='c',type='t'),dict(voltage='µV',current='mA',capacity='mAh'))
