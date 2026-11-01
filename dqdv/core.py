@@ -110,3 +110,12 @@ def calculate_cycle(df, cycle, direction, **settings):
                       dvdq_peak_capacity=dv_peak_x,dvdq_peak_value=dv_peak_y,dvdq_valley_capacity=dv_valley_x,dvdq_valley_value=dv_valley_y)
     report['reason']='계산 완료' if result is not None else '유효 행 또는 고유 전압 5개 미만'
     return result, report
+
+
+def calculate_step(df, step, direction, **settings):
+    """Run the unchanged cycle backend on one selected charge/discharge step."""
+    selected=df[(df.step.astype(str)==str(step))&(df.direction==direction)].copy()
+    selected['cycle']='__selected_step__'
+    result,report=calculate_cycle(selected,'__selected_step__',direction,**settings)
+    report['step']=str(step)
+    return result,report

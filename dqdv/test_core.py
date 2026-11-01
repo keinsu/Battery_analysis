@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from core import normalize, calculate_cycle, elapsed, detect_extrema
+from core import normalize, calculate_cycle, calculate_step, elapsed, detect_extrema
 from legacy_backend.dqdv import compute_dqdv, _cc_region_only, _dedup_monotonic
 
 
@@ -83,3 +83,10 @@ def test_insufficient_data():
     r,report=calculate_cycle(df.iloc[:4],'1','charge')
     assert r is None
     assert '5개 미만' in report['reason']
+
+
+def test_step_calculation_uses_only_the_requested_direction_step():
+    df,_=fixture()
+    result,report=calculate_step(df,'미지정','charge')
+    assert result is not None
+    assert report['step']=='미지정' and report['direction']=='charge'
