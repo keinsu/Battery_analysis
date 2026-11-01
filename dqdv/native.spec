@@ -2,7 +2,8 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 root=Path(SPECPATH)
 a=Analysis([str(root/'native_app.py')],pathex=[str(root)],
-    hiddenimports=collect_submodules('scipy._external',filter=lambda name: '.tests' not in name),
+    hiddenimports=(collect_submodules('scipy._external',filter=lambda name: '.tests' not in name)
+                 + collect_submodules('openpyxl') + collect_submodules('xlrd')),
     excludes=['streamlit','plotly','pytest','PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtWebEngineQuick'],
     noarchive=False)
 pyz=PYZ(a.pure)

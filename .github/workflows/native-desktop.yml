@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: native-desktop-v0.7.2
+  group: native-desktop-v0.8.0
   cancel-in-progress: false
 jobs:
   build:
@@ -42,7 +42,7 @@ jobs:
             const fs = require('fs');
             const crypto = require('crypto');
             const repo = context.repo;
-            const tag = 'v0.7.2-native';
+            const tag = 'v0.8.0-native';
             const target = context.payload.pull_request?.head.sha || context.sha;
             const data = fs.readFileSync('dist/BatteryAnalysisSuite-Desktop.exe');
             const digest = crypto.createHash('sha256').update(data).digest('hex');
@@ -51,8 +51,8 @@ jobs:
             catch(e) { if(e.status!==404) throw e; }
             if(release && !release.draft) throw new Error('Release already published; do not replace existing executable');
             if(!release) release=(await github.rest.repos.createRelease({...repo, tag_name:tag,target_commitish:target,
-              name:'Battery Analysis Suite v0.7.2 — 독립 실행파일',draft:true,
-              body:'브라우저 없이 자체 Windows 창에서 실행하는 배터리 분석 프로그램 모음입니다. Python 설치나 별도 폴더 없이 BatteryAnalysisSuite-Desktop.exe 하나를 실행하세요.\n\nStep dQ/dV Analyzer에서 충전·방전 Step마다 Cycle을 별도로 지정할 수 있습니다. 자동 기본값은 최저 전류 Step을 찾은 뒤 그 Step이 있는 Cycle 중 데이터상 마지막 Cycle입니다. 계산은 Step과 Cycle을 함께 필터링하므로 반복되는 Step 번호가 섞이지 않습니다. 비교 파일 B도 같은 방식입니다.\n\ndQ/dV와 dV/dQ는 충전(위)·방전(아래) 패널로 분리됩니다.\n\nWindows 계산 테스트와 완성된 단일 EXE의 화면 생성·CSV 분석·좌표 표시 검증 통과.\n\nSHA-256: '+digest})).data;
+              name:'Battery Analysis Suite v0.8.0 — 독립 실행파일',draft:true,
+              body:'브라우저 없이 자체 Windows 창에서 실행하는 배터리 분석 프로그램 모음입니다. Python 설치나 별도 폴더 없이 BatteryAnalysisSuite-Desktop.exe 하나를 실행하세요.\n\n첫 화면에 Cycle 데이터 입력을 추가했습니다. CSV, XLSX, XLS 입력 파일을 열고, 첫 Cycle 열 뒤의 용량·에너지·온도 3개 블록 구조를 검증합니다. 입력 데이터 시작 행은 기본 3행이며 바꿀 수 있습니다. 이 버전은 템플릿 삽입에 앞서 입력 구조와 대상 행을 확인하는 단계입니다.\n\nWindows 계산 테스트와 완성된 단일 EXE의 화면 생성·CSV 분석·좌표 표시 검증 통과.\n\nSHA-256: '+digest})).data;
             await github.rest.repos.uploadReleaseAsset({...repo,release_id:release.id,name:'BatteryAnalysisSuite-Desktop.exe',data,
               headers:{'content-type':'application/octet-stream','content-length':data.length}});
             await github.rest.repos.updateRelease({...repo,release_id:release.id,draft:false});

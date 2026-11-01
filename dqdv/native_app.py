@@ -1,5 +1,6 @@
 """Native Qt desktop UI. No browser, web server, or web rendering engine."""
 import json
+import io
 import sys
 import traceback
 from pathlib import Path
@@ -19,7 +20,7 @@ class SuiteWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Battery Analysis Suite')
-        self.resize(920,600)
+        self.resize(1040,700)
         self.active_window=None
         central=QtWidgets.QWidget();self.setCentralWidget(central)
         layout=QtWidgets.QVBoxLayout(central);layout.setContentsMargins(54,46,54,46);layout.setSpacing(18)
@@ -27,10 +28,11 @@ class SuiteWindow(QtWidgets.QMainWindow):
         subtitle=QtWidgets.QLabel('시작할 분석 프로그램을 선택하세요. 각 프로그램은 같은 충방전 원본 데이터를 사용할 수 있습니다.')
         subtitle.setStyleSheet('font-size:14px;color:#475569;')
         layout.addWidget(title);layout.addWidget(subtitle);layout.addSpacing(16)
-        cards=QtWidgets.QHBoxLayout();cards.setSpacing(20);layout.addLayout(cards)
-        cards.addWidget(self.tool_card('dQ/dV Analyzer','Cycle 변화에 따른 dQ/dV 곡선, 단일 cycle 상세, peak voltage 추이를 분석합니다.','분석 시작',self.open_dqdv,True))
-        cards.addWidget(self.tool_card('Step dQ/dV Analyzer','한 cycle에서 지정한 충전 Step과 방전 Step의 dQ/dV·dV/dQ를 분석합니다.','분석 시작',self.open_step_dqdv,True))
-        cards.addWidget(self.tool_card('사이클분석','Cycle별 충방전 용량과 효율, 전압 거동을 분석하는 다음 프로그램입니다.','프로그램 열기',self.open_cycle_analysis,False))
+        cards=QtWidgets.QGridLayout();cards.setHorizontalSpacing(20);cards.setVerticalSpacing(20);layout.addLayout(cards)
+        cards.addWidget(self.tool_card('dQ/dV Analyzer','Cycle 변화에 따른 dQ/dV 곡선, 단일 cycle 상세, peak voltage 추이를 분석합니다.','분석 시작',self.open_dqdv,True),0,0)
+        cards.addWidget(self.tool_card('Step dQ/dV Analyzer','한 cycle에서 지정한 충전 Step과 방전 Step의 dQ/dV·dV/dQ를 분석합니다.','분석 시작',self.open_step_dqdv,True),0,1)
+        cards.addWidget(self.tool_card('Cycle 데이터 입력','입력 파일의 Cycle·용량·에너지·온도 블록을 확인하고 템플릿 입력을 준비합니다.','프로그램 열기',self.open_cycle_data_input,True),1,0)
+        cards.addWidget(self.tool_card('사이클분석','Cycle별 충방전 용량과 효율, 전압 거동을 분석하는 다음 프로그램입니다.','프로그램 열기',self.open_cycle_analysis,False),1,1)
         layout.addStretch()
         note=QtWidgets.QLabel('현재 제공 기능: dQ/dV Analyzer   ·   다음 확장: 사이클분석')
         note.setStyleSheet('color:#64748b;');layout.addWidget(note)
@@ -54,8 +56,90 @@ class SuiteWindow(QtWidgets.QMainWindow):
     def open_step_dqdv(self):
         self.active_window=MainWindow(home=self,selection_mode='step');self.hide();self.active_window.show()
 
+    def open_cycle_data_input(self):
+        self.active_window=CycleDataInputWindow(home=self);self.hide();self.active_window.show()
+
     def open_cycle_analysis(self):
         self.active_window=CycleAnalysisWindow(home=self);self.hide();self.active_window.show()
+
+
+class CycleDataInputWindow(QtWidgets.QMainWindow):
+    """Prepare a cycle summary spreadsheet for a later template-placement step."""
+    def __init__(self,home):
+        super().__init__()
+        self.home=home;self.source=None;self.source_path='';self.data_from_start=None
+        self.setWindowTitle('Cycle 데이터 입력 — Battery Analysis Suite');self.resize(1180,780)
+        central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
+        header=QtWidgets.QHBoxLayout();layout.addLayout(header)
+        back=QtWidgets.QPushButton('← 프로그램 목록');back.clicked.connect(self.return_home);header.addWidget(back)
+        title=QtWidgets.QLabel('Cycle 데이터 입력');title.setStyleSheet('font-size:24px;font-weight:600;');header.addWidget(title);header.addStretch()
+        self.file_label=QtWidgets.QLabel('입력 파일을 선택하세요.');header.addWidget(self.file_label)
+        open_button=QtWidgets.QPushButton('파일 열기');open_button.clicked.connect(self.open_input_file);header.addWidget(open_button)
+        options=QtWidgets.QHBoxLayout();layout.addLayout(options)
+        options.addWidget(QtWidgets.QLabel('입력 데이터 시작 행'))
+        self.start_row=QtWidgets.QSpinBox();self.start_row.setRange(1,1_000_000);self.start_row.setValue(3);self.start_row.setSuffix(' 행');self.start_row.valueChanged.connect(self.update_preview);options.addWidget(self.start_row)
+        options.addWidget(QtWidgets.QLabel('1부터 세는 원본 파일 행 번호입니다.'));options.addStretch()
+        self.summary=QtWidgets.QLabel('파일을 열면 첫 열(Cycle)과 용량·에너지·온도 블록 구조를 확인합니다.');self.summary.setStyleSheet('padding:7px;background:#eef4ff;');layout.addWidget(self.summary)
+        self.structure=QtWidgets.QLabel('템플릿 삽입 위치는 다음 단계에서 지정합니다.');self.structure.setWordWrap(True);self.structure.setStyleSheet('color:#475569;padding:4px;');layout.addWidget(self.structure)
+        self.preview=QtWidgets.QTableWidget();self.preview.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers);self.preview.setAlternatingRowColors(True);layout.addWidget(self.preview,1)
+        self.status=QtWidgets.QLabel('지원 형식: CSV, XLSX, XLS');self.status.setStyleSheet('color:#475569;');layout.addWidget(self.status)
+
+    def return_home(self):
+        self.home.show();self.close()
+
+    def open_input_file(self):
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'입력 데이터 파일 열기','','Spreadsheet (*.csv *.xlsx *.xls);;CSV (*.csv);;Excel (*.xlsx *.xls)')
+        if path:
+            try:self.load_input_file(path)
+            except Exception as exc:QtWidgets.QMessageBox.warning(self,'파일 읽기 실패',str(exc))
+
+    @staticmethod
+    def column_name(index):
+        name='';index+=1
+        while index:
+            index,remainder=divmod(index-1,26);name=chr(65+remainder)+name
+        return name
+
+    @staticmethod
+    def read_spreadsheet(path):
+        suffix=Path(path).suffix.lower()
+        if suffix=='.csv':
+            data=Path(path).read_bytes()
+            for encoding in ('utf-8-sig','cp949','utf-16'):
+                try:return pd.read_csv(io.StringIO(data.decode(encoding)),header=None)
+                except UnicodeError:continue
+            raise ValueError('지원하는 인코딩으로 CSV를 읽을 수 없습니다.')
+        if suffix=='.xlsx':return pd.read_excel(path,header=None,engine='openpyxl')
+        if suffix=='.xls':return pd.read_excel(path,header=None,engine='xlrd')
+        raise ValueError('CSV, XLSX, XLS 파일만 열 수 있습니다.')
+
+    def load_input_file(self,path):
+        frame=self.read_spreadsheet(path)
+        if frame.empty:raise ValueError('비어 있는 파일입니다.')
+        if frame.shape[1]<4:raise ValueError('첫 Cycle 열과 용량·에너지·온도 열이 필요합니다.')
+        remainder=frame.shape[1]-1
+        if remainder%3:raise ValueError(f'첫 열을 제외한 데이터 열은 용량·에너지·온도 블록으로 3의 배수여야 합니다. 현재 {remainder}개입니다.')
+        self.source=frame;self.source_path=str(path);self.cell_count=remainder//3
+        self.file_label.setText(f'{Path(path).name} · {len(frame):,}행 · {frame.shape[1]:,}열')
+        capacity_start=self.column_name(1);capacity_end=self.column_name(self.cell_count)
+        energy_start=self.column_name(1+self.cell_count);energy_end=self.column_name(2*self.cell_count)
+        temp_start=self.column_name(1+2*self.cell_count);temp_end=self.column_name(3*self.cell_count)
+        self.summary.setText(f'검출된 셀 수: {self.cell_count}개  |  Cycle 열: A  |  용량: {capacity_start}–{capacity_end}  |  에너지: {energy_start}–{energy_end}  |  온도: {temp_start}–{temp_end}')
+        self.structure.setText('현재는 입력 구조와 시작 행을 확인하는 단계입니다. 다음 단계에서 정리용 template 파일과 삽입 위치를 지정합니다.')
+        self.update_preview()
+
+    def update_preview(self,*args):
+        if self.source is None:return
+        start=self.start_row.value()-1
+        self.data_from_start=self.source.iloc[start:].copy()
+        shown=self.data_from_start.head(200)
+        self.preview.setRowCount(len(shown));self.preview.setColumnCount(len(shown.columns))
+        self.preview.setHorizontalHeaderLabels([self.column_name(index) for index in range(len(shown.columns))])
+        self.preview.setVerticalHeaderLabels([str(index+1) for index in range(start,start+len(shown))])
+        for row,values in enumerate(shown.itertuples(index=False,name=None)):
+            for column,value in enumerate(values):self.preview.setItem(row,column,QtWidgets.QTableWidgetItem('' if pd.isna(value) else str(value)))
+        self.preview.resizeColumnsToContents()
+        self.status.setText(f'{self.start_row.value()}행부터 {len(self.data_from_start):,}행을 템플릿 입력 후보로 준비했습니다. 미리보기는 최대 200행입니다.')
 
 
 class CycleAnalysisWindow(QtWidgets.QMainWindow):
@@ -684,8 +768,13 @@ def smoke(app,output):
     with tempfile.TemporaryDirectory() as temp:
         suite=SuiteWindow();suite.show();app.processEvents()
         assert suite.windowTitle()=='Battery Analysis Suite'
-        assert len(suite.findChildren(QtWidgets.QPushButton))==3
+        assert len(suite.findChildren(QtWidgets.QPushButton))==4
         suite.close()
+        input_frame=pd.DataFrame([[1,10,11,20,21,30,31],[2,12,13,22,23,32,33],[3,14,15,24,25,34,35],[4,16,17,26,27,36,37]])
+        input_path=Path(temp)/'cycle_input.csv';input_frame.to_csv(input_path,index=False,header=False,encoding='utf-8-sig')
+        input_win=CycleDataInputWindow(home=None);input_win.load_input_file(input_path);app.processEvents()
+        assert input_win.cell_count==2 and len(input_win.data_from_start)==2
+        input_win.close()
         assert MainWindow.cycle_color(0,3,0).name().lower()=='#123b8a'
         assert MainWindow.cycle_color(2,3,0).name().lower()=='#b91c1c'
         assert MainWindow.cycle_color(0,3,1).name().lower()=='#1f2937'
