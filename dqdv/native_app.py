@@ -79,7 +79,11 @@ class CycleDataInputWindow(QtWidgets.QMainWindow):
         options=QtWidgets.QHBoxLayout();layout.addLayout(options)
         options.addWidget(QtWidgets.QLabel('입력 데이터 시작 행'))
         self.start_row=QtWidgets.QSpinBox();self.start_row.setRange(1,1_000_000);self.start_row.setValue(3);self.start_row.setSuffix(' 행');self.start_row.valueChanged.connect(self.update_preview);options.addWidget(self.start_row)
-        options.addWidget(QtWidgets.QLabel('1부터 세는 원본 파일 행 번호입니다.'));options.addStretch()
+        options.addWidget(QtWidgets.QLabel('총 셀 수'))
+        self.total_cells=QtWidgets.QSpinBox();self.total_cells.setRange(1,10_000);self.total_cells.setValue(1);self.total_cells.setSuffix(' 개');self.total_cells.valueChanged.connect(self.refresh_cell_layout);options.addWidget(self.total_cells)
+        options.addWidget(QtWidgets.QLabel('조기 종료 셀'))
+        self.terminated_cells=QtWidgets.QLineEdit();self.terminated_cells.setPlaceholderText('예: 5,8 또는 5-8');self.terminated_cells.setMaximumWidth(180);self.terminated_cells.textChanged.connect(self.refresh_cell_layout);options.addWidget(self.terminated_cells)
+        options.addWidget(QtWidgets.QLabel('원본 파일 행은 1부터 셉니다.'));options.addStretch()
         self.summary=QtWidgets.QLabel('파일을 열면 첫 열(Cycle)과 용량·에너지·온도 블록 구조를 확인합니다.');self.summary.setStyleSheet('padding:7px;background:#eef4ff;');layout.addWidget(self.summary)
         self.structure=QtWidgets.QLabel('템플릿 삽입 위치는 다음 단계에서 지정합니다.');self.structure.setWordWrap(True);self.structure.setStyleSheet('color:#475569;padding:4px;');layout.addWidget(self.structure)
         template_box=QtWidgets.QGroupBox('Template 삽입 위치');template_form=QtWidgets.QFormLayout(template_box);layout.addWidget(template_box)
@@ -133,9 +137,37 @@ class CycleDataInputWindow(QtWidgets.QMainWindow):
         capacity_start=self.column_name(1);capacity_end=self.column_name(self.cell_count)
         energy_start=self.column_name(1+self.cell_count);energy_end=self.column_name(2*self.cell_count)
         temp_start=self.column_name(1+2*self.cell_count);temp_end=self.column_name(3*self.cell_count)
-        self.summary.setText(f'검출된 셀 수: {self.cell_count}개  |  Cycle 열: A  |  용량: {capacity_start}–{capacity_end}  |  에너지: {energy_start}–{energy_end}  |  온도: {temp_start}–{temp_end}')
+        self.base_summary=f'입력 데이터 열 기준 셀 수: {self.cell_count}개  |  Cycle 열: A  |  용량: {capacity_start}–{capacity_end}  |  에너지: {energy_start}–{energy_end}  |  온도: {temp_start}–{temp_end}'
+        self.total_cells.blockSignals(True);self.terminated_cells.blockSignals(True);self.total_cells.setValue(self.cell_count);self.terminated_cells.clear();self.total_cells.blockSignals(False);self.terminated_cells.blockSignals(False)
         self.structure.setText('Template 파일을 선택한 뒤 첫 입력 시트·열과 시트당 셀 수를 지정하세요. 용량·에너지·온도는 시작 열, +12열, +24열에 배치됩니다.')
+        self.refresh_cell_layout()
         self.update_preview()
+
+    @staticmethod
+    def parse_cell_numbers(text,total):
+        values=set()
+        if not text.strip():return values
+        for part in text.split(','):
+            token=part.strip()
+            if not token:continue
+            if '-' in token:
+                start_text,end_text=(value.strip() for value in token.split('-',1));start,end=int(start_text),int(end_text)
+                if end<start:raise ValueError('조기 종료 셀 범위의 끝 번호는 시작 번호보다 커야 합니다.')
+                values.update(range(start,end+1))
+            else:values.add(int(token))
+        invalid=sorted(value for value in values if value<1 or value>total)
+        if invalid:raise ValueError('조기 종료 셀 번호는 1부터 총 셀 수 사이여야 합니다: '+', '.join(map(str,invalid)))
+        return values
+
+    def refresh_cell_layout(self,*args):
+        if self.source is None:return
+        try:
+            skipped=self.parse_cell_numbers(self.terminated_cells.text(),self.total_cells.value())
+            expected=self.total_cells.value()-len(skipped)
+            note=f'총 셀 수: {self.total_cells.value()}개 | 조기 종료: '+(', '.join(map(str,sorted(skipped))) if skipped else '없음')+f' | 입력 데이터 셀 열: {self.cell_count}개'
+            if expected!=self.cell_count:note+=f' — 현재 입력 파일은 정상 셀 {self.cell_count}개이지만 총 셀 수와 조기 종료 설정상 {expected}개가 필요합니다.'
+            self.summary.setText(self.base_summary+'\n'+note)
+        except ValueError as exc:self.summary.setText(self.base_summary+'\n설정 확인: '+str(exc))
 
     def open_template_file(self):
         path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Template 파일 열기','','Excel Template (*.xlsx *.xls)')
@@ -195,14 +227,18 @@ class CycleDataInputWindow(QtWidgets.QMainWindow):
         first_sheet=self.template_sheet.currentData()
         if first_sheet is None:raise ValueError('첫 입력 시트를 선택하세요.')
         base_column=self.column_index(self.template_column.text());per_sheet=self.cells_per_sheet.value();rows=len(self.data_from_start)
+        skipped=self.parse_cell_numbers(self.terminated_cells.text(),self.total_cells.value())
+        physical_cells=[cell for cell in range(1,self.total_cells.value()+1) if cell not in skipped]
+        if len(physical_cells)!=self.cell_count:
+            raise ValueError(f'입력 파일은 셀 데이터 {self.cell_count}개를 포함하지만, 총 셀 수 {self.total_cells.value()}개와 조기 종료 셀 설정에서는 {len(physical_cells)}개가 필요합니다.')
         targets=[]
         labels=('용량 (Ah)','에너지 (Wh)','온도 (°C)')
         for block,label in enumerate(labels):
-            for cell_index in range(self.cell_count):
-                sheet_index=first_sheet+cell_index//per_sheet;column=base_column+block*12+cell_index%per_sheet
-                if sheet_index>=sheet_count:raise ValueError(f'{label} Cell {cell_index+1}에 필요한 시트가 부족합니다. 최소 {sheet_index+1}번째 시트가 필요합니다.')
-                values=self.data_from_start.iloc[:,1+block*self.cell_count+cell_index].tolist()
-                targets.append((sheet_index,column,values,label,cell_index+1,rows))
+            for input_index,physical_cell in enumerate(physical_cells):
+                sheet_index=first_sheet+(physical_cell-1)//per_sheet;column=base_column+block*12+(physical_cell-1)%per_sheet
+                if sheet_index>=sheet_count:raise ValueError(f'{label} Cell {physical_cell}에 필요한 시트가 부족합니다. 최소 {sheet_index+1}번째 시트가 필요합니다.')
+                values=self.data_from_start.iloc[:,1+block*self.cell_count+input_index].tolist()
+                targets.append((sheet_index,column,values,label,physical_cell,rows))
         return targets
 
     def apply_template_safe(self):
@@ -897,6 +933,11 @@ def smoke(app,output):
         assert output_book['Sheet 1']['C3'].value==14 and output_book['Sheet 2']['C4'].value==15
         assert output_book['Sheet 1']['O6'].value==24 and output_book['Sheet 2']['AA6'].value==35
         output_book.close()
+        skip_template=Path(temp)/'template_skip.xlsx';skip_book=Workbook();skip_book.active.title='Sheet 1';skip_book.create_sheet('Sheet 2');skip_book.create_sheet('Sheet 3');skip_book['Sheet 1']['C2'].fill=yellow;skip_book.save(skip_template)
+        input_win.total_cells.setValue(3);input_win.terminated_cells.setText('2');input_win.load_template_file(skip_template);input_win.apply_template()
+        skipped_book=load_workbook(Path(temp)/'template_skip_입력완료.xlsx',data_only=True)
+        assert skipped_book['Sheet 1']['C3'].value==14 and skipped_book['Sheet 2']['C6'].value is None and skipped_book['Sheet 3']['C6'].value==15
+        skipped_book.close()
         input_win.close()
         assert MainWindow.cycle_color(0,3,0).name().lower()=='#123b8a'
         assert MainWindow.cycle_color(2,3,0).name().lower()=='#b91c1c'
