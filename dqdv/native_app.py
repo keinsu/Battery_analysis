@@ -654,9 +654,9 @@ def smoke(app,output):
         win.remove_compare_file()
         win.points.setValue(200);win.analyze();assert all(len(r)==200 for r in win.results)
         win.direction.setCurrentIndex(2);win.analyze();assert len(win.results)==3
-        _,x,y,_=win.traces[0][0]
-        point=win.plots[0].plotItem.vb.mapViewToScene(QtCore.QPointF(float(x[50]),float(y[50])))
-        win.cursor_at(0,point);assert 'Voltage' in win.coordinate.text()
+        _,x,y,_=win.traces[win.MAIN_DQDV_DISCHARGE][0]
+        point=win.plots[win.MAIN_DQDV_DISCHARGE].plotItem.vb.mapViewToScene(QtCore.QPointF(float(x[50]),float(y[50])))
+        win.cursor_at(win.MAIN_DQDV_DISCHARGE,point);assert 'Voltage' in win.coordinate.text()
         win.cycles.setText('999');win.analyze();assert not win.exports[0].isEnabled()
         win.cycles.setText('1,5,10');win.restore_defaults();win.direction.setCurrentIndex(0);win.analyze();app.processEvents()
         win.grab().save(str(Path(output).with_suffix('.png')))
