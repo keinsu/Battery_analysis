@@ -72,7 +72,8 @@ class CycleAnalysisWindow(QtWidgets.QMainWindow):
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    MAIN_DQDV,MAIN_DVDQ,MAIN_VQ,DETAIL_DQDV,DETAIL_VQ,PEAK_TREND=range(6)
+    (MAIN_DQDV_CHARGE,MAIN_DQDV_DISCHARGE,MAIN_DVDQ_CHARGE,MAIN_DVDQ_DISCHARGE,MAIN_VQ,
+     DETAIL_DQDV_CHARGE,DETAIL_DQDV_DISCHARGE,DETAIL_VQ_CHARGE,DETAIL_VQ_DISCHARGE,PEAK_TREND)=range(10)
 
     def __init__(self,home=None):
         super().__init__()
@@ -163,10 +164,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.coordinate=QtWidgets.QLabel('곡선 위로 마우스를 이동하세요.');self.coordinate.setStyleSheet('font-family:Consolas;font-size:13px;padding:5px;background:#eef4ff;');self.coordinate.setFixedHeight(32);self.coordinate.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,QtWidgets.QSizePolicy.Policy.Fixed);gl.addWidget(self.coordinate)
         self.plots=[];self.crosshairs=[];self.traces=[];self.proxies=[]
         self.main_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);gl.addWidget(self.main_charts,1)
-        for index,title in enumerate(['dQ/dV','dV/dQ','원본 V–Q']):
-            plot=pg.PlotWidget(title=title);plot.showGrid(x=True,y=True,alpha=.2)
-            for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
-            self.main_charts.addWidget(plot);self.register_plot(plot)
+        self.main_dqdv_charts=self.stacked_charts(self.main_charts,['dQ/dV · 충전','dQ/dV · 방전'])
+        self.main_dvdq_charts=self.stacked_charts(self.main_charts,['dV/dQ · 충전','dV/dQ · 방전'])
+        self.main_vq=pg.PlotWidget(title='원본 V–Q');self.main_vq.showGrid(x=True,y=True,alpha=.2)
+        for axis in ['bottom','left']:self.main_vq.getAxis(axis).enableAutoSIPrefix(False)
+        self.main_charts.addWidget(self.main_vq);self.register_plot(self.main_vq)
         self.main_charts.setSizes([500,500,300]);self.toggle_raw_vq(False);self.drag.currentIndexChanged.connect(self.set_drag)
         detail_page=QtWidgets.QWidget();detail_layout=QtWidgets.QVBoxLayout(detail_page);self.tabs.addTab(detail_page,'단일 Cycle 상세')
         detail_header=QtWidgets.QHBoxLayout();detail_header.addWidget(QtWidgets.QLabel('상세 Cycle (A)'))
@@ -177,10 +179,8 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in self.detail_compare_widgets:widget.setVisible(False)
         detail_header.addWidget(QtWidgets.QLabel('각 파일의 선택 cycle 충전·방전 V–Q와 dQ/dV를 함께 표시합니다.'));detail_header.addStretch();detail_layout.addLayout(detail_header)
         detail_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);detail_layout.addWidget(detail_charts,1)
-        for title in ['dQ/dV · 단일 Cycle','V–Q · 단일 Cycle']:
-            plot=pg.PlotWidget(title=title);plot.addLegend();plot.showGrid(x=True,y=True,alpha=.2)
-            for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
-            detail_charts.addWidget(plot);self.register_plot(plot)
+        self.detail_dqdv_charts=self.stacked_charts(detail_charts,['dQ/dV · 충전','dQ/dV · 방전'],legend=True)
+        self.detail_vq_charts=self.stacked_charts(detail_charts,['V–Q · 충전','V–Q · 방전'],legend=True)
         detail_charts.setSizes([550,550])
         peak_page=QtWidgets.QWidget();peak_layout=QtWidgets.QVBoxLayout(peak_page);self.tabs.addTab(peak_page,'피크 전압 추이')
         peak_layout.addWidget(QtWidgets.QLabel('선택한 cycle에서 검출된 dQ/dV peak(○)와 valley(×)의 전압 위치입니다. dV/dQ 극값은 피크 표에서 확인합니다.'))
@@ -199,6 +199,18 @@ class MainWindow(QtWidgets.QMainWindow):
     @staticmethod
     def spin(low,high,value,step=1):
         w=QtWidgets.QSpinBox();w.setRange(low,high);w.setValue(value);w.setSingleStep(step);return w
+
+    def stacked_charts(self,parent,titles,legend=False):
+        """Create vertically separated charge/discharge plots in one metric column."""
+        container=QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical);parent.addWidget(container)
+        for title in titles:
+            plot=pg.PlotWidget(title=title)
+            if legend:plot.addLegend()
+            plot.showGrid(x=True,y=True,alpha=.2)
+            for axis in ['bottom','left']:plot.getAxis(axis).enableAutoSIPrefix(False)
+            container.addWidget(plot);self.register_plot(plot)
+        container.setSizes([1,1])
+        return container
 
     def lock_wheel(self,widget):
         """Keep a scrolling pointer from changing a left-panel setting."""
@@ -448,18 +460,20 @@ class MainWindow(QtWidgets.QMainWindow):
                         color=self.cycle_color(ci,len(source_cycles),source_index)
                         pen=pg.mkPen(color,width=2,style=QtCore.Qt.PenStyle.SolidLine if direction=='charge' else QtCore.Qt.PenStyle.DashLine)
                         y=np.abs(r['dqdv']) if self.absolute.isChecked() else r['dqdv']
-                        item=self.plots[self.MAIN_DQDV].plot(r['voltage_grid'],y,pen=pen)
-                        self.traces[self.MAIN_DQDV].append((item,r['voltage_grid'],y,name))
-                        item_dvdq=self.plots[self.MAIN_DVDQ].plot(r['capacity_grid'],r['dvdq'],pen=pen)
-                        self.traces[self.MAIN_DVDQ].append((item_dvdq,r['capacity_grid'],r['dvdq'],name))
+                        main_dqdv=self.MAIN_DQDV_CHARGE if direction=='charge' else self.MAIN_DQDV_DISCHARGE
+                        main_dvdq=self.MAIN_DVDQ_CHARGE if direction=='charge' else self.MAIN_DVDQ_DISCHARGE
+                        item=self.plots[main_dqdv].plot(r['voltage_grid'],y,pen=pen)
+                        self.traces[main_dqdv].append((item,r['voltage_grid'],y,name))
+                        item_dvdq=self.plots[main_dvdq].plot(r['capacity_grid'],r['dvdq'],pen=pen)
+                        self.traces[main_dvdq].append((item_dvdq,r['capacity_grid'],r['dvdq'],name))
                         g=source_subset[(source_subset.cycle==cycle)&(source_subset.direction==direction)]
                         xq,yv=g.capacity.to_numpy()*1000,g.voltage.to_numpy()
                         itemq=self.plots[self.MAIN_VQ].plot(xq,yv,pen=pen);self.traces[self.MAIN_VQ].append((itemq,xq,yv,name))
                         if self.show_peaks.isChecked():
-                            self.plots[self.MAIN_DQDV].plot(r['dqdv_peak_voltage'],np.abs(r['dqdv_peak_value']) if self.absolute.isChecked() else r['dqdv_peak_value'],pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
-                            self.plots[self.MAIN_DQDV].plot(r['dqdv_valley_voltage'],np.abs(r['dqdv_valley_value']) if self.absolute.isChecked() else r['dqdv_valley_value'],pen=None,symbol='x',symbolSize=8,symbolPen=color)
-                            self.plots[self.MAIN_DVDQ].plot(r['dvdq_peak_capacity'],r['dvdq_peak_value'],pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
-                            self.plots[self.MAIN_DVDQ].plot(r['dvdq_valley_capacity'],r['dvdq_valley_value'],pen=None,symbol='x',symbolSize=8,symbolPen=color)
+                            self.plots[main_dqdv].plot(r['dqdv_peak_voltage'],np.abs(r['dqdv_peak_value']) if self.absolute.isChecked() else r['dqdv_peak_value'],pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
+                            self.plots[main_dqdv].plot(r['dqdv_valley_voltage'],np.abs(r['dqdv_valley_value']) if self.absolute.isChecked() else r['dqdv_valley_value'],pen=None,symbol='x',symbolSize=8,symbolPen=color)
+                            self.plots[main_dvdq].plot(r['dvdq_peak_capacity'],r['dvdq_peak_value'],pen=None,symbol='o',symbolSize=7,symbolPen=color,symbolBrush='w')
+                            self.plots[main_dvdq].plot(r['dvdq_valley_capacity'],r['dvdq_valley_value'],pen=None,symbol='x',symbolSize=8,symbolPen=color)
                         curve=pd.DataFrame(dict(source=source_name,cycle=cycle,direction=direction,voltage_V=r['voltage_grid'],capacity_mAh=r['capacity_on_vgrid'],dqdv_mAh_per_V=r['dqdv']))
                         self.results.append(curve)
                         self.detail_records.append(dict(source_index=source_index,cycle=cycle,direction=direction,result=r,raw=g,pen=pen,name=name))
@@ -467,8 +481,10 @@ class MainWindow(QtWidgets.QMainWindow):
                                  ('dV/dQ','peak',r['dvdq_peak_capacity'],r['dvdq_peak_value']),('dV/dQ','valley',r['dvdq_valley_capacity'],r['dvdq_valley_value'])]
                         for metric,kind,axis,derivative in extrema:
                             self.peak_rows.extend(dict(source=source_name,cycle=cycle,direction=direction,metric=metric,kind=kind,axis_value=float(x),derivative_value=float(y)) for x,y in zip(axis,derivative))
-            self.plots[self.MAIN_DQDV].setLabel('bottom','Voltage',units='V');self.plots[self.MAIN_DQDV].setLabel('left','|dQ/dV|' if self.absolute.isChecked() else 'dQ/dV',units='mAh/V')
-            self.plots[self.MAIN_DVDQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.MAIN_DVDQ].setLabel('left','dV/dQ',units='V/mAh')
+            for index in (self.MAIN_DQDV_CHARGE,self.MAIN_DQDV_DISCHARGE):
+                self.plots[index].setLabel('bottom','Voltage',units='V');self.plots[index].setLabel('left','|dQ/dV|' if self.absolute.isChecked() else 'dQ/dV',units='mAh/V')
+            for index in (self.MAIN_DVDQ_CHARGE,self.MAIN_DVDQ_DISCHARGE):
+                self.plots[index].setLabel('bottom','Capacity',units='mAh');self.plots[index].setLabel('left','dV/dQ',units='V/mAh')
             self.plots[self.MAIN_VQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.MAIN_VQ].setLabel('left','Voltage',units='V')
             self.fill_table(self.peak_table,pd.DataFrame(self.peak_rows,columns=['source','cycle','direction','metric','kind','axis_value','derivative_value']))
             self.detail_cycle.blockSignals(True);self.detail_cycle.clear();self.detail_cycle.addItems(chosen);self.detail_cycle.blockSignals(False)
@@ -506,9 +522,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.crosshairs:
             self.crosshairs[index][0].setPos(x);self.crosshairs[index][1].setPos(y)
             for line in self.crosshairs[index]:line.show()
-        if index in (self.MAIN_DQDV,self.DETAIL_DQDV):self.coordinate.setText(f'{name} | Voltage {x:.5f} V | dQ/dV {y:.4f} mAh/V')
-        elif index==self.MAIN_DVDQ:self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | dV/dQ {y:.6f} V/mAh')
-        elif index in (self.MAIN_VQ,self.DETAIL_VQ):self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | Voltage {y:.5f} V')
+        if index in (self.MAIN_DQDV_CHARGE,self.MAIN_DQDV_DISCHARGE,self.DETAIL_DQDV_CHARGE,self.DETAIL_DQDV_DISCHARGE):self.coordinate.setText(f'{name} | Voltage {x:.5f} V | dQ/dV {y:.4f} mAh/V')
+        elif index in (self.MAIN_DVDQ_CHARGE,self.MAIN_DVDQ_DISCHARGE):self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | dV/dQ {y:.6f} V/mAh')
+        elif index in (self.MAIN_VQ,self.DETAIL_VQ_CHARGE,self.DETAIL_VQ_DISCHARGE):self.coordinate.setText(f'{name} | Capacity {x:.4f} mAh | Voltage {y:.5f} V')
         else:self.coordinate.setText(f'{name} | Cycle {x:.0f} | Peak Voltage {y:.5f} V')
 
     def set_drag(self,*args):
@@ -519,24 +535,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def update_detail(self,*args):
         if not hasattr(self,'detail_records') or not self.detail_cycle.currentText():return
-        for index in (self.DETAIL_DQDV,self.DETAIL_VQ):self.reset_plot(index)
+        for index in (self.DETAIL_DQDV_CHARGE,self.DETAIL_DQDV_DISCHARGE,self.DETAIL_VQ_CHARGE,self.DETAIL_VQ_DISCHARGE):self.reset_plot(index)
         selected_cycles={0:self.detail_cycle.currentText()}
         if self.compare_df is not None and self.detail_compare_cycle.currentText():selected_cycles[1]=self.detail_compare_cycle.currentText()
         for record in self.detail_records:
             if record['source_index'] not in selected_cycles or record['cycle']!=selected_cycles[record['source_index']]:continue
             result,raw,pen,name=record['result'],record['raw'],record['pen'],record['name']
             y=np.abs(result['dqdv']) if self.absolute.isChecked() else result['dqdv']
-            item=self.plots[self.DETAIL_DQDV].plot(result['voltage_grid'],y,pen=pen,name=name)
-            self.traces[self.DETAIL_DQDV].append((item,result['voltage_grid'],y,name))
+            detail_dqdv=self.DETAIL_DQDV_CHARGE if record['direction']=='charge' else self.DETAIL_DQDV_DISCHARGE
+            detail_vq=self.DETAIL_VQ_CHARGE if record['direction']=='charge' else self.DETAIL_VQ_DISCHARGE
+            item=self.plots[detail_dqdv].plot(result['voltage_grid'],y,pen=pen,name=name)
+            self.traces[detail_dqdv].append((item,result['voltage_grid'],y,name))
             xq,yv=raw.capacity.to_numpy()*1000,raw.voltage.to_numpy()
-            item=self.plots[self.DETAIL_VQ].plot(xq,yv,pen=pen,name=name)
-            self.traces[self.DETAIL_VQ].append((item,xq,yv,name))
+            item=self.plots[detail_vq].plot(xq,yv,pen=pen,name=name)
+            self.traces[detail_vq].append((item,xq,yv,name))
             if self.show_peaks.isChecked():
-                self.plots[self.DETAIL_DQDV].plot(result['dqdv_peak_voltage'],np.abs(result['dqdv_peak_value']) if self.absolute.isChecked() else result['dqdv_peak_value'],pen=None,symbol='o',symbolSize=8,symbolPen=pen.color(),symbolBrush='w')
-                self.plots[self.DETAIL_DQDV].plot(result['dqdv_valley_voltage'],np.abs(result['dqdv_valley_value']) if self.absolute.isChecked() else result['dqdv_valley_value'],pen=None,symbol='x',symbolSize=9,symbolPen=pen.color())
-        self.plots[self.DETAIL_DQDV].setLabel('bottom','Voltage',units='V');self.plots[self.DETAIL_DQDV].setLabel('left','dQ/dV',units='mAh/V')
-        self.plots[self.DETAIL_VQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.DETAIL_VQ].setLabel('left','Voltage',units='V')
-        self.plots[self.DETAIL_DQDV].autoRange();self.plots[self.DETAIL_VQ].autoRange()
+                self.plots[detail_dqdv].plot(result['dqdv_peak_voltage'],np.abs(result['dqdv_peak_value']) if self.absolute.isChecked() else result['dqdv_peak_value'],pen=None,symbol='o',symbolSize=8,symbolPen=pen.color(),symbolBrush='w')
+                self.plots[detail_dqdv].plot(result['dqdv_valley_voltage'],np.abs(result['dqdv_valley_value']) if self.absolute.isChecked() else result['dqdv_valley_value'],pen=None,symbol='x',symbolSize=9,symbolPen=pen.color())
+        for index in (self.DETAIL_DQDV_CHARGE,self.DETAIL_DQDV_DISCHARGE):
+            self.plots[index].setLabel('bottom','Voltage',units='V');self.plots[index].setLabel('left','dQ/dV',units='mAh/V');self.plots[index].autoRange()
+        for index in (self.DETAIL_VQ_CHARGE,self.DETAIL_VQ_DISCHARGE):
+            self.plots[index].setLabel('bottom','Capacity',units='mAh');self.plots[index].setLabel('left','Voltage',units='V');self.plots[index].autoRange()
 
     def update_peak_trend(self):
         self.reset_plot(self.PEAK_TREND)
@@ -579,7 +598,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def export_png(self):
         path,_=QtWidgets.QFileDialog.getSaveFileName(self,'dQ/dV 그래프 저장','dqdv.png','PNG (*.png)')
         if path:
-            try:pg.exporters.ImageExporter(self.plots[self.MAIN_DQDV].plotItem).export(path)
+            try:pg.exporters.ImageExporter(self.plots[self.MAIN_DQDV_CHARGE].plotItem).export(path)
             except Exception as exc:QtWidgets.QMessageBox.warning(self,'저장 실패',str(exc))
 
 
@@ -610,8 +629,9 @@ def smoke(app,output):
         win=MainWindow();win.show();app.processEvents();win.load_file(path)
         win.cycles.setText('1,5,10');win.analyze();app.processEvents()
         assert len(win.results)==6,win.status.text()
-        assert len(win.traces[win.MAIN_DVDQ])==6
-        assert len(win.traces[win.DETAIL_DQDV])==2 and len(win.traces[win.DETAIL_VQ])==2
+        assert len(win.traces[win.MAIN_DVDQ_CHARGE])==3 and len(win.traces[win.MAIN_DVDQ_DISCHARGE])==3
+        assert len(win.traces[win.DETAIL_DQDV_CHARGE])==1 and len(win.traces[win.DETAIL_DQDV_DISCHARGE])==1
+        assert len(win.traces[win.DETAIL_VQ_CHARGE])==1 and len(win.traces[win.DETAIL_VQ_DISCHARGE])==1
         assert len(win.traces[win.PEAK_TREND]) <= 4
         win.peak_rows=[dict(source='파일 A',cycle='1',direction='charge',metric='dQ/dV',kind='peak',axis_value=3.2,derivative_value=1.0),
                        dict(source='파일 A',cycle='1',direction='discharge',metric='dQ/dV',kind='valley',axis_value=3.1,derivative_value=-1.0),
@@ -626,10 +646,11 @@ def smoke(app,output):
         compare_path=Path(temp)/'compare.csv';compare_raw.to_csv(compare_path,index=False,encoding='utf-8-sig')
         win.load_compare_file(compare_path);win.compare_cycles.setText('1,5,10');win.analyze();app.processEvents()
         assert len(win.results)==12 and {r.source.iloc[0] for r in win.results}=={'파일 A','파일 B'}
-        assert len(win.traces[win.MAIN_DVDQ])==12
-        assert len(win.traces[win.DETAIL_DQDV])==4 and len(win.traces[win.DETAIL_VQ])==4
+        assert len(win.traces[win.MAIN_DVDQ_CHARGE])==6 and len(win.traces[win.MAIN_DVDQ_DISCHARGE])==6
+        assert len(win.traces[win.DETAIL_DQDV_CHARGE])==2 and len(win.traces[win.DETAIL_DQDV_DISCHARGE])==2
+        assert len(win.traces[win.DETAIL_VQ_CHARGE])==2 and len(win.traces[win.DETAIL_VQ_DISCHARGE])==2
         win.detail_compare_cycle.setCurrentText('10');app.processEvents()
-        assert win.detail_compare_cycle.currentText()=='10' and len(win.traces[win.DETAIL_DQDV])==4
+        assert win.detail_compare_cycle.currentText()=='10' and len(win.traces[win.DETAIL_DQDV_CHARGE])==2
         win.remove_compare_file()
         win.points.setValue(200);win.analyze();assert all(len(r)==200 for r in win.results)
         win.direction.setCurrentIndex(2);win.analyze();assert len(win.results)==3
