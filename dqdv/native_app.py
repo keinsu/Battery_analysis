@@ -1,6 +1,7 @@
 """Native Qt desktop UI. No browser, web server, or web rendering engine."""
 import json
 import io
+import shutil
 import sys
 import traceback
 from pathlib import Path
@@ -81,6 +82,13 @@ class CycleDataInputWindow(QtWidgets.QMainWindow):
         options.addWidget(QtWidgets.QLabel('1부터 세는 원본 파일 행 번호입니다.'));options.addStretch()
         self.summary=QtWidgets.QLabel('파일을 열면 첫 열(Cycle)과 용량·에너지·온도 블록 구조를 확인합니다.');self.summary.setStyleSheet('padding:7px;background:#eef4ff;');layout.addWidget(self.summary)
         self.structure=QtWidgets.QLabel('템플릿 삽입 위치는 다음 단계에서 지정합니다.');self.structure.setWordWrap(True);self.structure.setStyleSheet('color:#475569;padding:4px;');layout.addWidget(self.structure)
+        template_box=QtWidgets.QGroupBox('Template 삽입 위치');template_form=QtWidgets.QFormLayout(template_box);layout.addWidget(template_box)
+        template_row=QtWidgets.QHBoxLayout();self.template_label=QtWidgets.QLabel('template 파일을 선택하세요.');template_row.addWidget(self.template_label,1)
+        template_open=QtWidgets.QPushButton('Template 열기');template_open.clicked.connect(self.open_template_file);template_row.addWidget(template_open);template_form.addRow('Template 파일',template_row)
+        self.template_sheet=QtWidgets.QComboBox();template_form.addRow('첫 입력 시트',self.template_sheet)
+        self.template_column=QtWidgets.QLineEdit('A');self.template_column.setMaxLength(3);self.template_column.setPlaceholderText('예: C');template_form.addRow('첫 입력 열',self.template_column)
+        self.cells_per_sheet=QtWidgets.QSpinBox();self.cells_per_sheet.setRange(1,4);self.cells_per_sheet.setValue(1);self.cells_per_sheet.setSuffix(' 개 / 시트');template_form.addRow('시트당 셀 수',self.cells_per_sheet)
+        self.apply_template_button=QtWidgets.QPushButton('복사본 생성 / 데이터 입력');self.apply_template_button.clicked.connect(self.apply_template_safe);self.apply_template_button.setEnabled(False);template_form.addRow(self.apply_template_button)
         self.preview=QtWidgets.QTableWidget();self.preview.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers);self.preview.setAlternatingRowColors(True);layout.addWidget(self.preview,1)
         self.status=QtWidgets.QLabel('지원 형식: CSV, XLSX, XLS');self.status.setStyleSheet('color:#475569;');layout.addWidget(self.status)
 
@@ -120,13 +128,119 @@ class CycleDataInputWindow(QtWidgets.QMainWindow):
         remainder=frame.shape[1]-1
         if remainder%3:raise ValueError(f'첫 열을 제외한 데이터 열은 용량·에너지·온도 블록으로 3의 배수여야 합니다. 현재 {remainder}개입니다.')
         self.source=frame;self.source_path=str(path);self.cell_count=remainder//3
+        self.apply_template_button.setEnabled(hasattr(self,'template_path'))
         self.file_label.setText(f'{Path(path).name} · {len(frame):,}행 · {frame.shape[1]:,}열')
         capacity_start=self.column_name(1);capacity_end=self.column_name(self.cell_count)
         energy_start=self.column_name(1+self.cell_count);energy_end=self.column_name(2*self.cell_count)
         temp_start=self.column_name(1+2*self.cell_count);temp_end=self.column_name(3*self.cell_count)
         self.summary.setText(f'검출된 셀 수: {self.cell_count}개  |  Cycle 열: A  |  용량: {capacity_start}–{capacity_end}  |  에너지: {energy_start}–{energy_end}  |  온도: {temp_start}–{temp_end}')
-        self.structure.setText('현재는 입력 구조와 시작 행을 확인하는 단계입니다. 다음 단계에서 정리용 template 파일과 삽입 위치를 지정합니다.')
+        self.structure.setText('Template 파일을 선택한 뒤 첫 입력 시트·열과 시트당 셀 수를 지정하세요. 용량·에너지·온도는 시작 열, +12열, +24열에 배치됩니다.')
         self.update_preview()
+
+    def open_template_file(self):
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Template 파일 열기','','Excel Template (*.xlsx *.xls)')
+        if path:
+            try:self.load_template_file(path)
+            except Exception as exc:QtWidgets.QMessageBox.warning(self,'Template 읽기 실패',str(exc))
+
+    def load_template_file(self,path):
+        suffix=Path(path).suffix.lower()
+        if suffix=='.xlsx':
+            from openpyxl import load_workbook
+            workbook=load_workbook(path,read_only=True,data_only=False);sheet_names=workbook.sheetnames;workbook.close()
+        elif suffix=='.xls':
+            import xlrd
+            sheet_names=xlrd.open_workbook(path,formatting_info=True).sheet_names()
+        else:raise ValueError('Template은 시트를 가진 XLSX 또는 XLS 파일이어야 합니다.')
+        if not sheet_names:raise ValueError('시트가 없는 Template 파일입니다.')
+        self.template_path=str(path);self.template_sheet.clear()
+        for index,name in enumerate(sheet_names):self.template_sheet.addItem(f'{index+1}. {name}',index)
+        self.template_label.setText(f'{Path(path).name} · {len(sheet_names)}개 시트')
+        self.apply_template_button.setEnabled(self.source is not None)
+        self.status.setText('Template을 읽었습니다. 첫 입력 시트·열과 시트당 셀 수를 확인한 뒤 복사본 생성 / 데이터 입력을 누르세요.')
+
+    @staticmethod
+    def column_index(value):
+        text=value.strip().upper()
+        if not text or not text.isalpha():raise ValueError('첫 입력 열은 A, C, AA처럼 열 문자로 입력하세요.')
+        index=0
+        for char in text:index=index*26+(ord(char)-64)
+        if index>16_384:raise ValueError('지원 범위를 벗어난 열입니다.')
+        return index-1
+
+    @staticmethod
+    def yellow_xlsx(cell):
+        for color in (cell.fill.fgColor,cell.fill.bgColor):
+            if color.type=='rgb' and str(color.rgb).upper().endswith('FFFF00'):return True
+            if color.type=='indexed' and color.indexed==13:return True
+        return False
+
+    @staticmethod
+    def yellow_xls(workbook,sheet,row,column):
+        try:
+            xf=workbook.xf_list[sheet.cell(row,column).xf_index]
+            indices=(xf.background.pattern_colour_index,xf.background.background_colour_index)
+            return any(tuple(workbook.colour_map.get(index,()))==(255,255,0) for index in indices)
+        except Exception:return False
+
+    def output_path(self):
+        source=Path(self.template_path);candidate=source.with_name(source.stem+'_입력완료'+source.suffix);number=2
+        while candidate.exists():
+            candidate=source.with_name(f'{source.stem}_입력완료_{number}{source.suffix}');number+=1
+        return candidate
+
+    def template_targets(self,sheet_count):
+        if self.source is None:raise ValueError('입력 파일을 먼저 여세요.')
+        if not hasattr(self,'template_path'):raise ValueError('Template 파일을 먼저 여세요.')
+        first_sheet=self.template_sheet.currentData()
+        if first_sheet is None:raise ValueError('첫 입력 시트를 선택하세요.')
+        base_column=self.column_index(self.template_column.text());per_sheet=self.cells_per_sheet.value();rows=len(self.data_from_start)
+        targets=[]
+        labels=('용량 (Ah)','에너지 (Wh)','온도 (°C)')
+        for block,label in enumerate(labels):
+            for cell_index in range(self.cell_count):
+                sheet_index=first_sheet+cell_index//per_sheet;column=base_column+block*12+cell_index%per_sheet
+                if sheet_index>=sheet_count:raise ValueError(f'{label} Cell {cell_index+1}에 필요한 시트가 부족합니다. 최소 {sheet_index+1}번째 시트가 필요합니다.')
+                values=self.data_from_start.iloc[:,1+block*self.cell_count+cell_index].tolist()
+                targets.append((sheet_index,column,values,label,cell_index+1,rows))
+        return targets
+
+    def apply_template_safe(self):
+        try:self.apply_template()
+        except Exception as exc:QtWidgets.QMessageBox.warning(self,'Template 입력 실패',str(exc))
+
+    def apply_template(self):
+        suffix=Path(self.template_path).suffix.lower()
+        output=self.output_path()
+        if suffix=='.xlsx':self.apply_xlsx(output)
+        elif suffix=='.xls':self.apply_xls(output)
+        else:raise ValueError('지원하지 않는 Template 형식입니다.')
+        self.status.setText(f'완료: 원본 Template은 유지하고 복사본을 만들었습니다. {output}')
+
+    def apply_xlsx(self,output):
+        from openpyxl import load_workbook
+        shutil.copy2(self.template_path,output)
+        workbook=load_workbook(output)
+        for sheet_index,column,values,label,cell_index,_ in self.template_targets(len(workbook.worksheets)):
+            sheet=workbook.worksheets[sheet_index];start_row=6
+            for row in range(1,sheet.max_row+1):
+                if self.yellow_xlsx(sheet.cell(row,column+1)):
+                    start_row=row+1
+            for offset,value in enumerate(values):sheet.cell(start_row+offset,column+1).value=None if pd.isna(value) else value
+        workbook.save(output);workbook.close()
+
+    def apply_xls(self,output):
+        import xlrd
+        from xlutils.copy import copy as copy_workbook
+        original=xlrd.open_workbook(self.template_path,formatting_info=True)
+        writable=copy_workbook(original)
+        for sheet_index,column,values,label,cell_index,_ in self.template_targets(original.nsheets):
+            sheet=original.sheet_by_index(sheet_index);start_row=5
+            for row in range(sheet.nrows):
+                if self.yellow_xls(original,sheet,row,column):start_row=row+1
+            target=writable.get_sheet(sheet_index)
+            for offset,value in enumerate(values):target.write(start_row+offset,column,'' if pd.isna(value) else value)
+        writable.save(str(output))
 
     def update_preview(self,*args):
         if self.source is None:return
@@ -774,6 +888,15 @@ def smoke(app,output):
         input_path=Path(temp)/'cycle_input.csv';input_frame.to_csv(input_path,index=False,header=False,encoding='utf-8-sig')
         input_win=CycleDataInputWindow(home=None);input_win.load_input_file(input_path);app.processEvents()
         assert input_win.cell_count==2 and len(input_win.data_from_start)==2
+        from openpyxl import Workbook,load_workbook
+        from openpyxl.styles import PatternFill
+        template_path=Path(temp)/'template.xlsx';template_book=Workbook();template_book.active.title='Sheet 1';template_book.create_sheet('Sheet 2')
+        yellow=PatternFill(fill_type='solid',fgColor='FFFF00');template_book['Sheet 1']['C2'].fill=yellow;template_book['Sheet 2']['C3'].fill=yellow;template_book.save(template_path)
+        input_win.load_template_file(template_path);input_win.template_column.setText('C');input_win.cells_per_sheet.setValue(1);input_win.apply_template()
+        output_book=load_workbook(Path(temp)/'template_입력완료.xlsx',data_only=True)
+        assert output_book['Sheet 1']['C3'].value==14 and output_book['Sheet 2']['C4'].value==15
+        assert output_book['Sheet 1']['O6'].value==24 and output_book['Sheet 2']['AA6'].value==35
+        output_book.close()
         input_win.close()
         assert MainWindow.cycle_color(0,3,0).name().lower()=='#123b8a'
         assert MainWindow.cycle_color(2,3,0).name().lower()=='#b91c1c'
