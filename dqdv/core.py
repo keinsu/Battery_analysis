@@ -119,3 +119,16 @@ def calculate_step(df, step, direction, **settings):
     result,report=calculate_cycle(selected,'__selected_step__',direction,**settings)
     report['step']=str(step)
     return result,report
+
+
+def lowest_current_step(df, direction):
+    """Return the last step among those with the lowest representative current magnitude."""
+    subset=df[df.direction==direction].copy()
+    if subset.empty:return ''
+    subset['_abs_current']=subset.current.abs()
+    summary=subset.groupby('step',sort=False).agg(current_magnitude=('_abs_current','median'),last_row=('row','max')).reset_index()
+    summary=summary[np.isfinite(summary.current_magnitude)]
+    if summary.empty:return ''
+    minimum=summary.current_magnitude.min()
+    candidates=summary[np.isclose(summary.current_magnitude,minimum,rtol=1e-9,atol=1e-12)]
+    return str(candidates.sort_values('last_row').iloc[-1]['step'])

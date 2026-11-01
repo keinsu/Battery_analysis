@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from core import normalize, calculate_cycle, calculate_step, elapsed, detect_extrema
+from core import normalize, calculate_cycle, calculate_step, lowest_current_step, elapsed, detect_extrema
 from legacy_backend.dqdv import compute_dqdv, _cc_region_only, _dedup_monotonic
 
 
@@ -90,3 +90,10 @@ def test_step_calculation_uses_only_the_requested_direction_step():
     result,report=calculate_step(df,'미지정','charge')
     assert result is not None
     assert report['step']=='미지정' and report['direction']=='charge'
+
+
+def test_lowest_current_step_uses_magnitude_and_last_tie():
+    df=pd.DataFrame(dict(direction=['charge']*6+['discharge']*6,step=['1','1','2','2','3','3']*2,
+                         current=[.2,.2,.1,.1,.1,.1,-.3,-.3,-.05,-.05,-.05,-.05],row=range(12)))
+    assert lowest_current_step(df,'charge')=='3'
+    assert lowest_current_step(df,'discharge')=='3'

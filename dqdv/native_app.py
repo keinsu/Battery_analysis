@@ -8,7 +8,7 @@ import pandas as pd
 import pyqtgraph as pg
 import pyqtgraph.exporters
 from PySide6 import QtCore, QtWidgets, QtGui
-from core import read_csv, normalize, segment_table, calculate_cycle, calculate_step
+from core import read_csv, normalize, segment_table, calculate_cycle, calculate_step, lowest_current_step
 from cycle_selection import select_cycles
 
 pg.setConfigOptions(background='w',foreground='#172033',antialias=True)
@@ -434,10 +434,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @staticmethod
     def set_default_steps(df,channel,charge_box,discharge_box):
         subset=df[df.channel==channel]
-        charge=list(subset[subset.direction=='charge'].step.unique())
-        discharge=list(subset[subset.direction=='discharge'].step.unique())
-        charge_box.setText(charge[0] if charge else '')
-        discharge_box.setText(discharge[0] if discharge else '')
+        charge_box.setText(lowest_current_step(subset,'charge'))
+        discharge_box.setText(lowest_current_step(subset,'discharge'))
 
     def update_compare_available(self,*args):
         if self.compare_df is None:return
