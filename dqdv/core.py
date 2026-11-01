@@ -112,12 +112,14 @@ def calculate_cycle(df, cycle, direction, **settings):
     return result, report
 
 
-def calculate_step(df, step, direction, **settings):
+def calculate_step(df, step, direction, cycle=None, **settings):
     """Run the unchanged cycle backend on one selected charge/discharge step."""
     selected=df[(df.step.astype(str)==str(step))&(df.direction==direction)].copy()
+    if cycle not in (None,''):
+        selected=selected[selected.cycle.astype(str)==str(cycle)].copy()
     selected['cycle']='__selected_step__'
     result,report=calculate_cycle(selected,'__selected_step__',direction,**settings)
-    report['step']=str(step)
+    report.update(step=str(step),selected_cycle='' if cycle is None else str(cycle))
     return result,report
 
 
@@ -132,3 +134,9 @@ def lowest_current_step(df, direction):
     minimum=summary.current_magnitude.min()
     candidates=summary[np.isclose(summary.current_magnitude,minimum,rtol=1e-9,atol=1e-12)]
     return str(candidates.sort_values('last_row').iloc[-1]['step'])
+
+
+def latest_cycle_for_step(df, step, direction):
+    """Return the last cycle in data order that contains the chosen directional step."""
+    subset=df[(df.step.astype(str)==str(step))&(df.direction==direction)]
+    return '' if subset.empty else str(subset.sort_values('row').iloc[-1]['cycle'])

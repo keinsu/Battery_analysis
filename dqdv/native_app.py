@@ -8,7 +8,7 @@ import pandas as pd
 import pyqtgraph as pg
 import pyqtgraph.exporters
 from PySide6 import QtCore, QtWidgets, QtGui
-from core import read_csv, normalize, segment_table, calculate_cycle, calculate_step, lowest_current_step
+from core import read_csv, normalize, segment_table, calculate_cycle, calculate_step, lowest_current_step, latest_cycle_for_step
 from cycle_selection import select_cycles
 
 pg.setConfigOptions(background='w',foreground='#172033',antialias=True)
@@ -125,8 +125,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cycles=QtWidgets.QLineEdit('1');self.cycles.setPlaceholderText('1,5,10-50:5 또는 전체')
         self.step_charge=QtWidgets.QLineEdit();self.step_charge.setPlaceholderText('충전 Step 번호')
         self.step_discharge=QtWidgets.QLineEdit();self.step_discharge.setPlaceholderText('방전 Step 번호')
+        self.step_charge_cycle=QtWidgets.QLineEdit();self.step_charge_cycle.setPlaceholderText('충전 Step의 Cycle')
+        self.step_discharge_cycle=QtWidgets.QLineEdit();self.step_discharge_cycle.setPlaceholderText('방전 Step의 Cycle')
         if self.selection_mode=='step':
-            form.addRow('충전 Step',self.step_charge);form.addRow('방전 Step',self.step_discharge)
+            form.addRow('충전 Step',self.step_charge);form.addRow('충전 Cycle',self.step_charge_cycle)
+            form.addRow('방전 Step',self.step_discharge);form.addRow('방전 Cycle',self.step_discharge_cycle)
         else:
             form.addRow('분석 방향',self.direction);form.addRow('Cycle 선택',self.cycles)
         self.available=QtWidgets.QLabel('');self.available.setWordWrap(True);form.addRow(self.available)
@@ -135,8 +138,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compare_cycles=QtWidgets.QLineEdit('1');self.compare_cycles.setPlaceholderText('비교 파일 Cycle')
         self.compare_step_charge=QtWidgets.QLineEdit();self.compare_step_charge.setPlaceholderText('비교 파일 충전 Step')
         self.compare_step_discharge=QtWidgets.QLineEdit();self.compare_step_discharge.setPlaceholderText('비교 파일 방전 Step')
+        self.compare_step_charge_cycle=QtWidgets.QLineEdit();self.compare_step_charge_cycle.setPlaceholderText('비교 파일 충전 Cycle')
+        self.compare_step_discharge_cycle=QtWidgets.QLineEdit();self.compare_step_discharge_cycle.setPlaceholderText('비교 파일 방전 Cycle')
         if self.selection_mode=='step':
-            compare_form.addRow('충전 Step (B)',self.compare_step_charge);compare_form.addRow('방전 Step (B)',self.compare_step_discharge)
+            compare_form.addRow('충전 Step (B)',self.compare_step_charge);compare_form.addRow('충전 Cycle (B)',self.compare_step_charge_cycle)
+            compare_form.addRow('방전 Step (B)',self.compare_step_discharge);compare_form.addRow('방전 Cycle (B)',self.compare_step_discharge_cycle)
         else:compare_form.addRow('비교 Cycle (B)',self.compare_cycles)
         self.compare_available=QtWidgets.QLabel('');self.compare_available.setWordWrap(True);compare_form.addRow(self.compare_available)
         form.addRow(self.compare_panel);self.compare_panel.setVisible(False)
@@ -155,7 +161,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in [self.channel,self.direction,self.compare_channel]:widget.currentIndexChanged.connect(self.invalidate)
         self.channel.currentIndexChanged.connect(self.update_available)
         self.compare_channel.currentIndexChanged.connect(self.update_compare_available)
-        for widget in [self.cycles,self.compare_cycles,self.step_charge,self.step_discharge,self.compare_step_charge,self.compare_step_discharge]:widget.textChanged.connect(self.invalidate)
+        for widget in [self.cycles,self.compare_cycles,self.step_charge,self.step_discharge,self.step_charge_cycle,self.step_discharge_cycle,self.compare_step_charge,self.compare_step_discharge,self.compare_step_charge_cycle,self.compare_step_discharge_cycle]:widget.textChanged.connect(self.invalidate)
         for widget in [self.points,self.window,self.poly,self.prom,self.upper]:widget.valueChanged.connect(self.invalidate)
         for widget in [self.smooth,self.auto,self.manual_upper,self.absolute,self.show_peaks]:widget.toggled.connect(self.invalidate)
         for widget in [self.smooth,self.auto,self.manual_upper]:widget.toggled.connect(self.sync_controls)
@@ -309,7 +315,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compare_df=normalize(raw,mapping,units,self.positive.isChecked())
         self.compare_channel.clear();self.compare_channel.addItems(list(self.compare_df.channel.unique()))
         if self.selection_mode=='step':
-            self.set_default_steps(self.compare_df,self.compare_channel.currentText(),self.compare_step_charge,self.compare_step_discharge)
+            self.set_default_steps(self.compare_df,self.compare_channel.currentText(),self.compare_step_charge,self.compare_step_charge_cycle,self.compare_step_discharge,self.compare_step_discharge_cycle)
         else:self.compare_cycles.setText(str(self.compare_df.cycle.iloc[0]))
         self.compare_panel.setVisible(True);self.remove_compare_btn.setVisible(True)
         for widget in self.compare_gradient_widgets:widget.setVisible(True)
@@ -336,7 +342,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.refresh_file_label()
         self.fill_table(self.preview,self.raw.head(100))
         self.apply_mapping()
-        if self.selection_mode=='step':self.set_default_steps(self.df,self.channel.currentText(),self.step_charge,self.step_discharge)
+        if self.selection_mode=='step':self.set_default_steps(self.df,self.channel.currentText(),self.step_charge,self.step_charge_cycle,self.step_discharge,self.step_discharge_cycle)
         else:self.cycles.setText(str(self.df.cycle.iloc[0]))
         self.analyze()
 
@@ -432,10 +438,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.available.setText(f'추출된 전체 Cycle: {len(cycles):,}개  |  범위: {cycles[0]} ~ {cycles[-1]}\n입력 예: 1,5,10-50:5 또는 전체\n사용 가능: {preview}')
 
     @staticmethod
-    def set_default_steps(df,channel,charge_box,discharge_box):
+    def set_default_steps(df,channel,charge_box,charge_cycle_box,discharge_box,discharge_cycle_box):
         subset=df[df.channel==channel]
-        charge_box.setText(lowest_current_step(subset,'charge'))
-        discharge_box.setText(lowest_current_step(subset,'discharge'))
+        charge_step=lowest_current_step(subset,'charge');discharge_step=lowest_current_step(subset,'discharge')
+        charge_box.setText(charge_step);charge_cycle_box.setText(latest_cycle_for_step(subset,charge_step,'charge'))
+        discharge_box.setText(discharge_step);discharge_cycle_box.setText(latest_cycle_for_step(subset,discharge_step,'discharge'))
 
     def update_compare_available(self,*args):
         if self.compare_df is None:return
@@ -472,17 +479,17 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.selection_mode=='step':
                 directions=['charge','discharge']
                 chosen=[value for value in [self.step_charge.text().strip(),self.step_discharge.text().strip()] if value]
-                entries=[(self.step_charge.text().strip(),'charge'),(self.step_discharge.text().strip(),'discharge')]
-                entries=[entry for entry in entries if entry[0]]
+                entries=[(self.step_charge.text().strip(),self.step_charge_cycle.text().strip(),'charge'),(self.step_discharge.text().strip(),self.step_discharge_cycle.text().strip(),'discharge')]
+                entries=[entry for entry in entries if entry[0] and entry[1]]
                 missing=[]
-                if not entries:raise ValueError('충전 Step 또는 방전 Step을 하나 이상 입력하세요.')
+                if not entries:raise ValueError('충전/방전 Step과 Cycle을 한 쌍 이상 입력하세요.')
                 sources=[('파일 A',channel_df,channel_df,entries,0)]
             else:
                 directions=['charge','discharge'] if self.direction.currentIndex()==0 else ['charge' if self.direction.currentIndex()==1 else 'discharge']
                 subset=channel_df[channel_df.direction.isin(directions)]
                 chosen,missing=select_cycles(self.cycles.text(),list(subset.cycle.unique()))
                 if not chosen:raise ValueError('파일 A에 해당 Cycle 데이터가 없습니다.')
-                entries=[(cycle,direction) for cycle in chosen for direction in directions]
+                entries=[(cycle,'',direction) for cycle in chosen for direction in directions]
                 sources=[('파일 A',channel_df,subset,entries,0)]
             compare_missing=[];compare_chosen=[]
             if self.compare_df is not None:
@@ -490,15 +497,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 compare_df=self.compare_df[self.compare_df.channel==self.compare_channel.currentText()]
                 if self.selection_mode=='step':
                     compare_chosen=[value for value in [self.compare_step_charge.text().strip(),self.compare_step_discharge.text().strip()] if value]
-                    compare_entries=[(self.compare_step_charge.text().strip(),'charge'),(self.compare_step_discharge.text().strip(),'discharge')]
-                    compare_entries=[entry for entry in compare_entries if entry[0]]
-                    if not compare_entries:raise ValueError('파일 B의 충전 Step 또는 방전 Step을 하나 이상 입력하세요.')
+                    compare_entries=[(self.compare_step_charge.text().strip(),self.compare_step_charge_cycle.text().strip(),'charge'),(self.compare_step_discharge.text().strip(),self.compare_step_discharge_cycle.text().strip(),'discharge')]
+                    compare_entries=[entry for entry in compare_entries if entry[0] and entry[1]]
+                    if not compare_entries:raise ValueError('파일 B의 충전/방전 Step과 Cycle을 한 쌍 이상 입력하세요.')
                     sources.append(('파일 B',compare_df,compare_df,compare_entries,1))
                 else:
                     compare_subset=compare_df[compare_df.direction.isin(directions)]
                     compare_chosen,compare_missing=select_cycles(self.compare_cycles.text(),list(compare_subset.cycle.unique()))
                     if not compare_chosen:raise ValueError('파일 B에 해당 Cycle 데이터가 없습니다.')
-                    compare_entries=[(cycle,direction) for cycle in compare_chosen for direction in directions]
+                    compare_entries=[(cycle,'',direction) for cycle in compare_chosen for direction in directions]
                     sources.append(('파일 B',compare_df,compare_subset,compare_entries,1))
             if self.smooth.isChecked() and not self.auto.isChecked():
                 if self.window.value()%2==0 or self.window.value()>=self.points.value() or self.window.value()<=self.poly.value():
@@ -516,11 +523,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.crosshairs=[None for _ in self.plots]
             for index in range(len(self.plots)):self.reset_plot(index)
             for source_name,source_df,source_subset,source_entries,source_index in sources:
-                for ci,(cycle,direction) in enumerate(source_entries):
-                        r,report=(calculate_step(source_df,cycle,direction,**params) if self.selection_mode=='step' else calculate_cycle(source_df,cycle,direction,**params))
-                        if r is None:excluded.append(f'{source_name} {cycle} {direction}: '+report['reason']);continue
+                for ci,(selection,selected_cycle,direction) in enumerate(source_entries):
+                        r,report=(calculate_step(source_df,selection,direction,cycle=selected_cycle,**params) if self.selection_mode=='step' else calculate_cycle(source_df,selection,direction,**params))
+                        if r is None:excluded.append(f'{source_name} {selection} {direction}: '+report['reason']);continue
                         selection_label=('Step' if self.selection_mode=='step' else 'Cycle')
-                        name=f'{source_name} · {selection_label} {cycle} · '+('충전' if direction=='charge' else '방전')
+                        cycle=selected_cycle or selection
+                        name=f'{source_name} · {selection_label} {selection}'+(f' · Cycle {selected_cycle}' if self.selection_mode=='step' else '')+' · '+('충전' if direction=='charge' else '방전')
                         color=self.cycle_color(ci,max(len(source_entries),2),source_index)
                         pen=pg.mkPen(color,width=2,style=QtCore.Qt.PenStyle.SolidLine if direction=='charge' else QtCore.Qt.PenStyle.DashLine)
                         y=np.abs(r['dqdv']) if self.absolute.isChecked() else r['dqdv']
@@ -530,7 +538,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         self.traces[main_dqdv].append((item,r['voltage_grid'],y,name))
                         item_dvdq=self.plots[main_dvdq].plot(r['capacity_grid'],r['dvdq'],pen=pen)
                         self.traces[main_dvdq].append((item_dvdq,r['capacity_grid'],r['dvdq'],name))
-                        g=(source_subset[(source_subset.step.astype(str)==str(cycle))&(source_subset.direction==direction)] if self.selection_mode=='step' else source_subset[(source_subset.cycle==cycle)&(source_subset.direction==direction)])
+                        g=(source_subset[(source_subset.step.astype(str)==str(selection))&(source_subset.cycle.astype(str)==str(selected_cycle))&(source_subset.direction==direction)] if self.selection_mode=='step' else source_subset[(source_subset.cycle==cycle)&(source_subset.direction==direction)])
                         xq,yv=g.capacity.to_numpy()*1000,g.voltage.to_numpy()
                         itemq=self.plots[self.MAIN_VQ].plot(xq,yv,pen=pen);self.traces[self.MAIN_VQ].append((itemq,xq,yv,name))
                         if self.show_peaks.isChecked():
@@ -696,6 +704,7 @@ def smoke(app,output):
         raw=pd.DataFrame(rows);path=Path(temp)/'sample.csv';raw.to_csv(path,index=False,encoding='utf-8-sig')
         step_win=MainWindow(selection_mode='step');step_win.show();app.processEvents();step_win.load_file(path);app.processEvents()
         assert len(step_win.results)==2,step_win.status.text()
+        assert step_win.step_charge_cycle.text()=='10' and step_win.step_discharge_cycle.text()=='10'
         step_win.close()
         win=MainWindow();win.show();app.processEvents();win.load_file(path)
         win.cycles.setText('1,5,10');win.analyze();app.processEvents()
