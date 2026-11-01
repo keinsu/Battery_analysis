@@ -146,10 +146,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs=QtWidgets.QTabWidget();split.addWidget(self.tabs);split.setSizes([330,1100])
         graph_page=QtWidgets.QWidget();gl=QtWidgets.QVBoxLayout(graph_page);self.tabs.addTab(graph_page,'그래프')
         bar=QtWidgets.QHBoxLayout();gl.addLayout(bar)
-        hint=QtWidgets.QLabel('마우스: 좌표 · 휠: 확대/축소 · 색상:');bar.addWidget(hint)
-        self.gradient_start=QtWidgets.QLabel('Cycle 시작');self.gradient_start.setStyleSheet('color:#2563eb;font-weight:600;');bar.addWidget(self.gradient_start)
-        self.gradient_bar=QtWidgets.QLabel();self.gradient_bar.setFixedSize(150,14);self.gradient_bar.setStyleSheet('border:1px solid #94a3b8;border-radius:3px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2563eb,stop:.25 #06b6d4,stop:.5 #22c55e,stop:.75 #eab308,stop:1 #dc2626);');bar.addWidget(self.gradient_bar)
-        self.gradient_end=QtWidgets.QLabel('Cycle 끝');self.gradient_end.setStyleSheet('color:#dc2626;font-weight:600;');bar.addWidget(self.gradient_end)
+        hint=QtWidgets.QLabel('색상:');bar.addWidget(hint)
+        self.gradient_start=QtWidgets.QLabel('A 시작');self.gradient_start.setStyleSheet('color:#123b8a;font-weight:600;');bar.addWidget(self.gradient_start)
+        self.gradient_bar=QtWidgets.QLabel();self.gradient_bar.setFixedSize(120,14);self.gradient_bar.setStyleSheet('border:1px solid #94a3b8;border-radius:3px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #123b8a,stop:.33 #8ec5ff,stop:.66 #ffaaa5,stop:1 #b91c1c);');bar.addWidget(self.gradient_bar)
+        self.gradient_end=QtWidgets.QLabel('A 끝');self.gradient_end.setStyleSheet('color:#b91c1c;font-weight:600;');bar.addWidget(self.gradient_end)
+        self.gradient_b_start=QtWidgets.QLabel('B 시작');self.gradient_b_start.setStyleSheet('color:#1f2937;font-weight:600;');bar.addWidget(self.gradient_b_start)
+        self.gradient_b_bar=QtWidgets.QLabel();self.gradient_b_bar.setFixedSize(120,14);self.gradient_b_bar.setStyleSheet('border:1px solid #94a3b8;border-radius:3px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #1f2937,stop:.33 #b8c0cc,stop:.66 #d8b4fe,stop:1 #6d28d9);');bar.addWidget(self.gradient_b_bar)
+        self.gradient_b_end=QtWidgets.QLabel('B 끝');self.gradient_b_end.setStyleSheet('color:#6d28d9;font-weight:600;');bar.addWidget(self.gradient_b_end)
+        self.compare_gradient_widgets=[self.gradient_b_start,self.gradient_b_bar,self.gradient_b_end]
+        for widget in self.compare_gradient_widgets:widget.setVisible(False)
         style_note=QtWidgets.QLabel('실선 충전 / 점선 방전');style_note.setStyleSheet('color:#475569;');bar.addWidget(style_note);bar.addStretch()
         self.vq_toggle=QtWidgets.QToolButton();self.vq_toggle.setCheckable(True);self.vq_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.vq_toggle.toggled.connect(self.toggle_raw_vq);bar.addWidget(self.vq_toggle)
@@ -164,9 +169,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.main_charts.addWidget(plot);self.register_plot(plot)
         self.main_charts.setSizes([500,500,300]);self.toggle_raw_vq(False);self.drag.currentIndexChanged.connect(self.set_drag)
         detail_page=QtWidgets.QWidget();detail_layout=QtWidgets.QVBoxLayout(detail_page);self.tabs.addTab(detail_page,'단일 Cycle 상세')
-        detail_header=QtWidgets.QHBoxLayout();detail_header.addWidget(QtWidgets.QLabel('상세 Cycle'))
+        detail_header=QtWidgets.QHBoxLayout();detail_header.addWidget(QtWidgets.QLabel('상세 Cycle (A)'))
         self.detail_cycle=QtWidgets.QComboBox();self.detail_cycle.currentIndexChanged.connect(self.update_detail);detail_header.addWidget(self.detail_cycle)
-        detail_header.addWidget(QtWidgets.QLabel('선택한 한 cycle의 충전·방전 V–Q와 dQ/dV를 함께 표시합니다.'));detail_header.addStretch();detail_layout.addLayout(detail_header)
+        self.detail_compare_label=QtWidgets.QLabel('상세 Cycle (B)');detail_header.addWidget(self.detail_compare_label)
+        self.detail_compare_cycle=QtWidgets.QComboBox();self.detail_compare_cycle.currentIndexChanged.connect(self.update_detail);detail_header.addWidget(self.detail_compare_cycle)
+        self.detail_compare_widgets=[self.detail_compare_label,self.detail_compare_cycle]
+        for widget in self.detail_compare_widgets:widget.setVisible(False)
+        detail_header.addWidget(QtWidgets.QLabel('각 파일의 선택 cycle 충전·방전 V–Q와 dQ/dV를 함께 표시합니다.'));detail_header.addStretch();detail_layout.addLayout(detail_header)
         detail_charts=QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal);detail_layout.addWidget(detail_charts,1)
         for title in ['dQ/dV · 단일 Cycle','V–Q · 단일 Cycle']:
             plot=pg.PlotWidget(title=title);plot.addLegend();plot.showGrid(x=True,y=True,alpha=.2)
@@ -218,10 +227,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_charts.setSizes([400,400,300] if visible else [500,500,0])
 
     @staticmethod
-    def cycle_color(index,total):
-        """Map selected cycles through a vivid blue-to-red spectrum."""
-        ratio=index/max(total-1,1)
-        return QtGui.QColor.fromHsv(round(220*(1-ratio)),230,225)
+    def cycle_color(index,total,source_index=0):
+        """Interpolate each source through its own readable cycle palette."""
+        palettes=(('#123b8a','#8ec5ff','#ffaaa5','#b91c1c'),
+                  ('#1f2937','#b8c0cc','#d8b4fe','#6d28d9'))
+        stops=[QtGui.QColor(value) for value in palettes[min(source_index,len(palettes)-1)]]
+        position=(index/max(total-1,1))*(len(stops)-1)
+        lower=min(int(position),len(stops)-2);fraction=position-lower
+        start,end=stops[lower],stops[lower+1]
+        return QtGui.QColor(round(start.red()+(end.red()-start.red())*fraction),round(start.green()+(end.green()-start.green())*fraction),round(start.blue()+(end.blue()-start.blue())*fraction))
 
     def invalidate(self,*args):
         if hasattr(self,'exports'):
@@ -262,10 +276,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compare_df=normalize(raw,mapping,units,self.positive.isChecked())
         self.compare_channel.clear();self.compare_channel.addItems(list(self.compare_df.channel.unique()))
         self.compare_cycles.setText(str(self.compare_df.cycle.iloc[0]));self.compare_panel.setVisible(True);self.remove_compare_btn.setVisible(True)
+        for widget in self.compare_gradient_widgets+self.detail_compare_widgets:widget.setVisible(True)
         self.refresh_file_label();self.update_compare_available();self.invalidate()
 
     def remove_compare_file(self):
         self.compare_raw=None;self.compare_df=None;self.compare_filename='';self.compare_channel.clear();self.compare_panel.setVisible(False);self.remove_compare_btn.setVisible(False)
+        self.detail_compare_cycle.clear()
+        for widget in self.compare_gradient_widgets+self.detail_compare_widgets:widget.setVisible(False)
         self.refresh_file_label();self.invalidate()
 
     def load_file(self,path):
@@ -414,8 +431,12 @@ class MainWindow(QtWidgets.QMainWindow):
             params=dict(n_points=self.points.value(),smooth=self.smooth.isChecked(),smooth_window=None if self.auto.isChecked() else self.window.value(),
                         smooth_polyorder=self.poly.value(),peak_prominence_pct=self.prom.value()/100,upper_voltage_v=self.upper.value() if self.manual_upper.isChecked() else None)
             self.results=[];self.peak_rows=[];self.detail_records=[];excluded=[]
-            self.gradient_start.setText(f'Cycle {chosen[0]}')
-            self.gradient_end.setText(f'Cycle {chosen[-1]}')
+            self.gradient_start.setText(f'A {chosen[0]}')
+            self.gradient_end.setText(f'A {chosen[-1]}')
+            for widget in self.compare_gradient_widgets+self.detail_compare_widgets:widget.setVisible(self.compare_df is not None)
+            if self.compare_df is not None:
+                self.gradient_b_start.setText(f'B {compare_chosen[0]}')
+                self.gradient_b_end.setText(f'B {compare_chosen[-1]}')
             self.crosshairs=[None for _ in self.plots]
             for index in range(len(self.plots)):self.reset_plot(index)
             for source_name,source_df,source_subset,source_cycles,source_index in sources:
@@ -424,9 +445,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         r,report=calculate_cycle(source_df,cycle,direction,**params)
                         if r is None:excluded.append(f'{source_name} {cycle} {direction}: '+report['reason']);continue
                         name=f'{source_name} · Cycle {cycle} · '+('충전' if direction=='charge' else '방전')
-                        color=self.cycle_color(ci,len(source_cycles))
-                        styles=([QtCore.Qt.PenStyle.SolidLine,QtCore.Qt.PenStyle.DashLine] if source_index==0 else [QtCore.Qt.PenStyle.DotLine,QtCore.Qt.PenStyle.DashDotLine])
-                        pen=pg.mkPen(color,width=2,style=styles[0] if direction=='charge' else styles[1])
+                        color=self.cycle_color(ci,len(source_cycles),source_index)
+                        pen=pg.mkPen(color,width=2,style=QtCore.Qt.PenStyle.SolidLine if direction=='charge' else QtCore.Qt.PenStyle.DashLine)
                         y=np.abs(r['dqdv']) if self.absolute.isChecked() else r['dqdv']
                         item=self.plots[self.MAIN_DQDV].plot(r['voltage_grid'],y,pen=pen)
                         self.traces[self.MAIN_DQDV].append((item,r['voltage_grid'],y,name))
@@ -442,7 +462,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             self.plots[self.MAIN_DVDQ].plot(r['dvdq_valley_capacity'],r['dvdq_valley_value'],pen=None,symbol='x',symbolSize=8,symbolPen=color)
                         curve=pd.DataFrame(dict(source=source_name,cycle=cycle,direction=direction,voltage_V=r['voltage_grid'],capacity_mAh=r['capacity_on_vgrid'],dqdv_mAh_per_V=r['dqdv']))
                         self.results.append(curve)
-                        if source_index==0:self.detail_records.append(dict(cycle=cycle,direction=direction,result=r,raw=g,pen=pen,name=name))
+                        self.detail_records.append(dict(source_index=source_index,cycle=cycle,direction=direction,result=r,raw=g,pen=pen,name=name))
                         extrema=[('dQ/dV','peak',r['dqdv_peak_voltage'],r['dqdv_peak_value']),('dQ/dV','valley',r['dqdv_valley_voltage'],r['dqdv_valley_value']),
                                  ('dV/dQ','peak',r['dvdq_peak_capacity'],r['dvdq_peak_value']),('dV/dQ','valley',r['dvdq_valley_capacity'],r['dvdq_valley_value'])]
                         for metric,kind,axis,derivative in extrema:
@@ -452,6 +472,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.plots[self.MAIN_VQ].setLabel('bottom','Capacity',units='mAh');self.plots[self.MAIN_VQ].setLabel('left','Voltage',units='V')
             self.fill_table(self.peak_table,pd.DataFrame(self.peak_rows,columns=['source','cycle','direction','metric','kind','axis_value','derivative_value']))
             self.detail_cycle.blockSignals(True);self.detail_cycle.clear();self.detail_cycle.addItems(chosen);self.detail_cycle.blockSignals(False)
+            self.detail_compare_cycle.blockSignals(True);self.detail_compare_cycle.clear()
+            if self.compare_df is not None:self.detail_compare_cycle.addItems(compare_chosen)
+            self.detail_compare_cycle.blockSignals(False)
             self.update_detail();self.update_peak_trend()
             self.settings=dict(file_a=Path(self.filename).name,mapping_a=self.mapping_values,units_a=self.unit_values,positive_charge=self.positive.isChecked(),
                 channel_a=self.channel.currentText(),cycles_a=chosen,file_b=Path(self.compare_filename).name if self.compare_raw is not None else None,
@@ -497,9 +520,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def update_detail(self,*args):
         if not hasattr(self,'detail_records') or not self.detail_cycle.currentText():return
         for index in (self.DETAIL_DQDV,self.DETAIL_VQ):self.reset_plot(index)
-        cycle=self.detail_cycle.currentText()
+        selected_cycles={0:self.detail_cycle.currentText()}
+        if self.compare_df is not None and self.detail_compare_cycle.currentText():selected_cycles[1]=self.detail_compare_cycle.currentText()
         for record in self.detail_records:
-            if record['cycle']!=cycle:continue
+            if record['source_index'] not in selected_cycles or record['cycle']!=selected_cycles[record['source_index']]:continue
             result,raw,pen,name=record['result'],record['raw'],record['pen'],record['name']
             y=np.abs(result['dqdv']) if self.absolute.isChecked() else result['dqdv']
             item=self.plots[self.DETAIL_DQDV].plot(result['voltage_grid'],y,pen=pen,name=name)
@@ -567,8 +591,10 @@ def smoke(app,output):
         assert suite.windowTitle()=='Battery Analysis Suite'
         assert len(suite.findChildren(QtWidgets.QPushButton))==2
         suite.close()
-        assert MainWindow.cycle_color(0,3).hue()==220
-        assert MainWindow.cycle_color(2,3).hue()==0
+        assert MainWindow.cycle_color(0,3,0).name().lower()=='#123b8a'
+        assert MainWindow.cycle_color(2,3,0).name().lower()=='#b91c1c'
+        assert MainWindow.cycle_color(0,3,1).name().lower()=='#1f2937'
+        assert MainWindow.cycle_color(2,3,1).name().lower()=='#6d28d9'
         unit_probe=MainWindow();unit_probe.raw=pd.DataFrame({'DataSequence':[1_113_200,1_114_100],'Voltage(mV)':[1113.2,1114.1],'Voltage(uV)':[1_113_200,1_114_100]})
         assert unit_probe.best_mapping_column('voltage')=='Voltage(mV)'
         assert unit_probe.infer_unit('voltage','Voltage(mV)')=='mV'
@@ -601,6 +627,9 @@ def smoke(app,output):
         win.load_compare_file(compare_path);win.compare_cycles.setText('1,5,10');win.analyze();app.processEvents()
         assert len(win.results)==12 and {r.source.iloc[0] for r in win.results}=={'파일 A','파일 B'}
         assert len(win.traces[win.MAIN_DVDQ])==12
+        assert len(win.traces[win.DETAIL_DQDV])==4 and len(win.traces[win.DETAIL_VQ])==4
+        win.detail_compare_cycle.setCurrentText('10');app.processEvents()
+        assert win.detail_compare_cycle.currentText()=='10' and len(win.traces[win.DETAIL_DQDV])==4
         win.remove_compare_file()
         win.points.setValue(200);win.analyze();assert all(len(r)==200 for r in win.results)
         win.direction.setCurrentIndex(2);win.analyze();assert len(win.results)==3
