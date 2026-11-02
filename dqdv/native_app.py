@@ -21,7 +21,7 @@ class SuiteWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Battery Analysis Suite')
-        self.resize(1040,700)
+        self.resize(1040,820)
         self.active_window=None
         central=QtWidgets.QWidget();self.setCentralWidget(central)
         layout=QtWidgets.QVBoxLayout(central);layout.setContentsMargins(54,46,54,46);layout.setSpacing(18)
@@ -34,6 +34,7 @@ class SuiteWindow(QtWidgets.QMainWindow):
         cards.addWidget(self.tool_card('Step dQ/dV Analyzer','한 cycle에서 지정한 충전 Step과 방전 Step의 dQ/dV·dV/dQ를 분석합니다.','분석 시작',self.open_step_dqdv,True),0,1)
         cards.addWidget(self.tool_card('Cycle 데이터 입력','입력 파일의 Cycle·용량·에너지·온도 블록을 확인하고 템플릿 입력을 준비합니다.','프로그램 열기',self.open_cycle_data_input,True),1,0)
         cards.addWidget(self.tool_card('사이클분석','Cycle별 충방전 용량과 효율, 전압 거동을 분석하는 다음 프로그램입니다.','프로그램 열기',self.open_cycle_analysis,False),1,1)
+        cards.addWidget(self.tool_card('Jelly Roll 외경 정리','Lot ID별 반복 외경 측정값을 세로 표로 정리해 Excel 파일로 저장합니다.','프로그램 열기',self.open_jelly_roll_diameter,True),2,0)
         layout.addStretch()
         note=QtWidgets.QLabel('현재 제공 기능: dQ/dV Analyzer   ·   다음 확장: 사이클분석')
         note.setStyleSheet('color:#64748b;');layout.addWidget(note)
@@ -60,8 +61,85 @@ class SuiteWindow(QtWidgets.QMainWindow):
     def open_cycle_data_input(self):
         self.active_window=CycleDataInputWindow(home=self);self.hide();self.active_window.show()
 
+    def open_jelly_roll_diameter(self):
+        self.active_window=JellyRollDiameterWindow(home=self);self.hide();self.active_window.show()
+
     def open_cycle_analysis(self):
         self.active_window=CycleAnalysisWindow(home=self);self.hide();self.active_window.show()
+
+
+class JellyRollDiameterWindow(QtWidgets.QMainWindow):
+    """Arrange repeated Jelly Roll diameter measurements under each Lot ID."""
+    def __init__(self,home):
+        super().__init__()
+        self.home=home;self.result=None;self.source_path=''
+        self.setWindowTitle('Jelly Roll 외경 정리 — Battery Analysis Suite');self.resize(1000,720)
+        central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
+        header=QtWidgets.QHBoxLayout();layout.addLayout(header)
+        back=QtWidgets.QPushButton('← 프로그램 목록');back.clicked.connect(self.return_home);header.addWidget(back)
+        title=QtWidgets.QLabel('Jelly Roll 외경 정리');title.setStyleSheet('font-size:24px;font-weight:600;');header.addWidget(title);header.addStretch()
+        self.file_label=QtWidgets.QLabel('A열: Lot ID / B열: 외경값');header.addWidget(self.file_label)
+        open_button=QtWidgets.QPushButton('Raw 파일 열기');open_button.clicked.connect(self.open_raw_file);header.addWidget(open_button)
+        self.export_button=QtWidgets.QPushButton('Excel 저장');self.export_button.clicked.connect(self.export_excel);self.export_button.setEnabled(False);header.addWidget(self.export_button)
+        instruction=QtWidgets.QLabel('2행부터 A열의 Lot ID별로 B열 외경값을 입력 순서대로 모읍니다. 결과 표의 첫 행은 Jelly Roll ID이고, 아래 행은 해당 ID의 반복 측정값입니다.')
+        instruction.setWordWrap(True);instruction.setStyleSheet('padding:7px;background:#eef4ff;');layout.addWidget(instruction)
+        self.preview=QtWidgets.QTableWidget();self.preview.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers);self.preview.setAlternatingRowColors(True);layout.addWidget(self.preview,1)
+        self.status=QtWidgets.QLabel('지원 형식: CSV, XLSX, XLS · 결과는 XLSX로 저장합니다.');self.status.setStyleSheet('color:#475569;');layout.addWidget(self.status)
+
+    def return_home(self):
+        self.home.show();self.close()
+
+    def open_raw_file(self):
+        path,_=QtWidgets.QFileDialog.getOpenFileName(self,'Jelly Roll Raw 파일 열기','','Spreadsheet (*.csv *.xlsx *.xls);;CSV (*.csv);;Excel (*.xlsx *.xls)')
+        if path:
+            try:self.load_raw_file(path)
+            except Exception as exc:QtWidgets.QMessageBox.warning(self,'파일 읽기 실패',str(exc))
+
+    @staticmethod
+    def id_text(value):
+        if isinstance(value,(int,np.integer)):return str(value)
+        if isinstance(value,(float,np.floating)) and np.isfinite(value) and value.is_integer():return str(int(value))
+        return str(value).strip()
+
+    def load_raw_file(self,path):
+        frame=CycleDataInputWindow.read_spreadsheet(path)
+        if frame.shape[1]<2:raise ValueError('A열 Lot ID와 B열 외경값이 필요합니다.')
+        grouped={}
+        for lot,diameter in frame.iloc[1:,:2].itertuples(index=False,name=None):
+            if pd.isna(lot) or pd.isna(diameter):continue
+            lot_id=self.id_text(lot)
+            if not lot_id:continue
+            grouped.setdefault(lot_id,[]).append(diameter)
+        if not grouped:raise ValueError('2행부터 유효한 Lot ID와 외경값 쌍을 찾지 못했습니다.')
+        max_count=max(len(values) for values in grouped.values())
+        self.result=pd.DataFrame({lot:values+[None]*(max_count-len(values)) for lot,values in grouped.items()})
+        self.source_path=str(path);self.file_label.setText(f'{Path(path).name} · Jelly Roll ID {len(grouped)}개 · 측정값 {sum(map(len,grouped.values()))}개')
+        self.fill_preview();self.export_button.setEnabled(True)
+        self.status.setText('정리 결과를 확인한 뒤 Excel 저장을 누르세요. 원본 파일은 수정하지 않습니다.')
+
+    def fill_preview(self):
+        shown=self.result.head(500);self.preview.setRowCount(len(shown)+1);self.preview.setColumnCount(len(shown.columns))
+        self.preview.setHorizontalHeaderLabels([str(index+1) for index in range(len(shown.columns))]);self.preview.setVerticalHeaderLabels(['첫 행']+[str(index+2) for index in range(len(shown))])
+        for column,name in enumerate(shown.columns):self.preview.setItem(0,column,QtWidgets.QTableWidgetItem(str(name)))
+        for row,values in enumerate(shown.itertuples(index=False,name=None),1):
+            for column,value in enumerate(values):self.preview.setItem(row,column,QtWidgets.QTableWidgetItem('' if pd.isna(value) else str(value)))
+        self.preview.resizeColumnsToContents()
+
+    def default_output_path(self):
+        source=Path(self.source_path);candidate=source.with_name(source.stem+'_jelly_roll_외경정리.xlsx');number=2
+        while candidate.exists():
+            candidate=source.with_name(f'{source.stem}_jelly_roll_외경정리_{number}.xlsx');number+=1
+        return candidate
+
+    def export_excel(self):
+        if self.result is None:return
+        path,_=QtWidgets.QFileDialog.getSaveFileName(self,'Jelly Roll 외경 정리 저장',str(self.default_output_path()),'Excel Workbook (*.xlsx)')
+        if not path:return
+        if not path.lower().endswith('.xlsx'):path+='.xlsx'
+        try:
+            self.result.to_excel(path,index=False,header=True,engine='openpyxl')
+            self.status.setText(f'저장 완료: {path}')
+        except Exception as exc:QtWidgets.QMessageBox.warning(self,'저장 실패',str(exc))
 
 
 class CycleDataInputWindow(QtWidgets.QMainWindow):
@@ -918,8 +996,13 @@ def smoke(app,output):
     with tempfile.TemporaryDirectory() as temp:
         suite=SuiteWindow();suite.show();app.processEvents()
         assert suite.windowTitle()=='Battery Analysis Suite'
-        assert len(suite.findChildren(QtWidgets.QPushButton))==4
+        assert len(suite.findChildren(QtWidgets.QPushButton))==5
         suite.close()
+        jelly_frame=pd.DataFrame([['Lot ID','Diameter'],['JR-01',10.12],['JR-02',10.25],['JR-01',10.18],['JR-02',10.29],['JR-02',10.31]])
+        jelly_path=Path(temp)/'jelly.csv';jelly_frame.to_csv(jelly_path,index=False,header=False,encoding='utf-8-sig')
+        jelly_win=JellyRollDiameterWindow(home=None);jelly_win.load_raw_file(jelly_path);app.processEvents()
+        assert list(jelly_win.result.columns)==['JR-01','JR-02'] and jelly_win.result.iloc[1,0]==10.18 and jelly_win.result.iloc[2,1]==10.31
+        jelly_win.close()
         input_frame=pd.DataFrame([[1,10,11,20,21,30,31],[2,12,13,22,23,32,33],[3,14,15,24,25,34,35],[4,16,17,26,27,36,37]])
         input_path=Path(temp)/'cycle_input.csv';input_frame.to_csv(input_path,index=False,header=False,encoding='utf-8-sig')
         input_win=CycleDataInputWindow(home=None);input_win.load_input_file(input_path);app.processEvents()
