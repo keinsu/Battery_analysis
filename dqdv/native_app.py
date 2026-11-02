@@ -1001,7 +1001,9 @@ def smoke(app,output):
         jelly_frame=pd.DataFrame([['Lot ID','Diameter'],['JR-01',10.12],['JR-02',10.25],['JR-01',10.18],['JR-02',10.29],['JR-02',10.31]])
         jelly_path=Path(temp)/'jelly.csv';jelly_frame.to_csv(jelly_path,index=False,header=False,encoding='utf-8-sig')
         jelly_win=JellyRollDiameterWindow(home=None);jelly_win.load_raw_file(jelly_path);app.processEvents()
-        assert list(jelly_win.result.columns)==['JR-01','JR-02'] and jelly_win.result.iloc[1,0]==10.18 and jelly_win.result.iloc[2,1]==10.31
+        assert list(jelly_win.result.columns)==['JR-01','JR-02']
+        np.testing.assert_allclose(jelly_win.result['JR-01'].dropna().to_numpy(float),[10.12,10.18])
+        np.testing.assert_allclose(jelly_win.result['JR-02'].dropna().to_numpy(float),[10.25,10.29,10.31])
         jelly_win.close()
         input_frame=pd.DataFrame([[1,10,11,20,21,30,31],[2,12,13,22,23,32,33],[3,14,15,24,25,34,35],[4,16,17,26,27,36,37]])
         input_path=Path(temp)/'cycle_input.csv';input_frame.to_csv(input_path,index=False,header=False,encoding='utf-8-sig')
