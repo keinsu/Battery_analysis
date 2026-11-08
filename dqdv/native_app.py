@@ -1,6 +1,8 @@
 """Native Qt desktop UI. No browser, web server, or web rendering engine."""
 import json
 import io
+import csv
+import re
 import shutil
 import sys
 import traceback
@@ -35,6 +37,7 @@ class SuiteWindow(QtWidgets.QMainWindow):
         cards.addWidget(self.tool_card('Cycle 데이터 입력','입력 파일의 Cycle·용량·에너지·온도 블록을 확인하고 템플릿 입력을 준비합니다.','프로그램 열기',self.open_cycle_data_input,True),1,0)
         cards.addWidget(self.tool_card('사이클분석','Cycle별 충방전 용량과 효율, 전압 거동을 분석하는 다음 프로그램입니다.','프로그램 열기',self.open_cycle_analysis,False),1,1)
         cards.addWidget(self.tool_card('Jelly Roll 외경 정리','Lot ID별 반복 외경 측정값을 세로 표로 정리해 Excel 파일로 저장합니다.','프로그램 열기',self.open_jelly_roll_diameter,True),2,0)
+        cards.addWidget(self.tool_card('Raw CSV 병합','분할된 다수의 Raw CSV를 원본 행 순서 그대로 하나의 CSV로 병합합니다.','프로그램 열기',self.open_raw_csv_merge,True),2,1)
         layout.addStretch()
         note=QtWidgets.QLabel('현재 제공 기능: dQ/dV Analyzer   ·   다음 확장: 사이클분석')
         note.setStyleSheet('color:#64748b;');layout.addWidget(note)
@@ -64,8 +67,113 @@ class SuiteWindow(QtWidgets.QMainWindow):
     def open_jelly_roll_diameter(self):
         self.active_window=JellyRollDiameterWindow(home=self);self.hide();self.active_window.show()
 
+    def open_raw_csv_merge(self):
+        self.active_window=RawCsvMergeWindow(home=self);self.hide();self.active_window.show()
+
     def open_cycle_analysis(self):
         self.active_window=CycleAnalysisWindow(home=self);self.hide();self.active_window.show()
+
+
+class RawCsvMergeWindow(QtWidgets.QMainWindow):
+    """Merge arbitrarily many sequential raw CSV parts without changing data rows."""
+    def __init__(self,home):
+        super().__init__()
+        self.home=home;self.paths=[]
+        self.setWindowTitle('Raw CSV 병합 — Battery Analysis Suite');self.resize(1000,720)
+        central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
+        header=QtWidgets.QHBoxLayout();layout.addLayout(header)
+        back=QtWidgets.QPushButton('← 프로그램 목록');back.clicked.connect(self.return_home);header.addWidget(back)
+        title=QtWidgets.QLabel('Raw CSV 병합');title.setStyleSheet('font-size:24px;font-weight:600;');header.addWidget(title);header.addStretch()
+        add=QtWidgets.QPushButton('CSV 추가');add.clicked.connect(self.add_csv_files);header.addWidget(add)
+        remove=QtWidgets.QPushButton('선택 제거');remove.clicked.connect(self.remove_selected);header.addWidget(remove)
+        self.merge_button=QtWidgets.QPushButton('하나의 CSV로 저장');self.merge_button.clicked.connect(self.merge_safe);self.merge_button.setEnabled(False);header.addWidget(self.merge_button)
+        guide=QtWidgets.QLabel('파일 수 제한 없이 선택합니다. 기본 순서는 이름.csv → 이름(1).csv → 이름(2).csv입니다. 데이터 행은 축소·재계산·중복 제거 없이 그대로 이어 붙입니다. 필요하면 목록에서 순서를 직접 바꿀 수 있습니다.')
+        guide.setWordWrap(True);guide.setStyleSheet('padding:7px;background:#eef4ff;');layout.addWidget(guide)
+        controls=QtWidgets.QHBoxLayout();layout.addLayout(controls)
+        up=QtWidgets.QPushButton('↑ 위로');up.clicked.connect(lambda:self.move_selected(-1));controls.addWidget(up)
+        down=QtWidgets.QPushButton('↓ 아래로');down.clicked.connect(lambda:self.move_selected(1));controls.addWidget(down);controls.addStretch()
+        self.table=QtWidgets.QTableWidget();self.table.setColumnCount(2);self.table.setHorizontalHeaderLabels(['병합 순서','파일']);self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows);self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers);layout.addWidget(self.table,1)
+        self.status=QtWidgets.QLabel('CSV 파일을 추가하세요.');self.status.setStyleSheet('color:#475569;');layout.addWidget(self.status)
+
+    def return_home(self):
+        self.home.show();self.close()
+
+    @staticmethod
+    def natural_key(path):
+        stem=Path(path).stem
+        match=re.fullmatch(r'(.+?)\s*\((\d+)\)',stem)
+        base=(match.group(1) if match else stem).casefold()
+        part=int(match.group(2)) if match else -1
+        return base,part,stem.casefold()
+
+    def add_csv_files(self):
+        paths,_=QtWidgets.QFileDialog.getOpenFileNames(self,'병합할 Raw CSV 선택','','CSV (*.csv)')
+        if not paths:return
+        known={str(Path(path).resolve()) for path in self.paths}
+        for path in paths:
+            candidate=Path(path)
+            if str(candidate.resolve()) not in known:self.paths.append(candidate);known.add(str(candidate.resolve()))
+        self.paths.sort(key=self.natural_key);self.refresh_table()
+
+    def refresh_table(self):
+        self.table.setRowCount(len(self.paths))
+        for row,path in enumerate(self.paths):
+            self.table.setItem(row,0,QtWidgets.QTableWidgetItem(str(row+1)))
+            self.table.setItem(row,1,QtWidgets.QTableWidgetItem(path.name))
+        self.table.resizeColumnsToContents();self.merge_button.setEnabled(bool(self.paths))
+        self.status.setText(f'{len(self.paths)}개 CSV가 선택되었습니다. 병합 순서를 확인하세요.' if self.paths else 'CSV 파일을 추가하세요.')
+
+    def remove_selected(self):
+        rows=sorted({index.row() for index in self.table.selectedIndexes()},reverse=True)
+        for row in rows:del self.paths[row]
+        self.refresh_table()
+
+    def move_selected(self,delta):
+        rows=sorted({index.row() for index in self.table.selectedIndexes()})
+        if len(rows)!=1:return
+        row=rows[0];target=row+delta
+        if target<0 or target>=len(self.paths):return
+        self.paths[row],self.paths[target]=self.paths[target],self.paths[row];self.refresh_table();self.table.selectRow(target)
+
+    @staticmethod
+    def csv_rows(path):
+        data=Path(path).read_bytes()
+        for encoding in ('utf-8-sig','cp949','utf-16'):
+            try:
+                rows=list(csv.reader(io.StringIO(data.decode(encoding))))
+                if rows:return rows
+            except UnicodeError:continue
+        raise ValueError(f'{Path(path).name}: 지원하는 인코딩으로 읽을 수 없습니다.')
+
+    def default_output_path(self):
+        first=self.paths[0];base=re.sub(r'\s*\(\d+\)$','',first.stem);candidate=first.with_name(base+'_병합.csv');number=2
+        while candidate.exists():
+            candidate=first.with_name(f'{base}_병합_{number}.csv');number+=1
+        return candidate
+
+    def merge_safe(self):
+        try:
+            output,_=QtWidgets.QFileDialog.getSaveFileName(self,'병합 CSV 저장',str(self.default_output_path()),'CSV (*.csv)')
+            if output:self.merge_to(Path(output if output.lower().endswith('.csv') else output+'.csv'))
+        except Exception as exc:QtWidgets.QMessageBox.warning(self,'병합 실패',str(exc))
+
+    def merge_to(self,output):
+        if not self.paths:raise ValueError('병합할 CSV 파일을 선택하세요.')
+        if any(output.resolve()==path.resolve() for path in self.paths):raise ValueError('원본 CSV를 덮어쓸 수 없습니다. 다른 파일명으로 저장하세요.')
+        header=None;row_count=0
+        try:
+            with open(output,'w',encoding='utf-8-sig',newline='') as target:
+                writer=csv.writer(target)
+                for path in self.paths:
+                    rows=self.csv_rows(path)
+                    current_header=rows[0]
+                    if header is None:header=current_header;writer.writerow(header)
+                    elif current_header!=header:raise ValueError(f'{path.name}: 열 제목 또는 열 순서가 첫 파일과 다릅니다.')
+                    for row in rows[1:]:writer.writerow(row);row_count+=1
+        except Exception:
+            if output.exists():output.unlink()
+            raise
+        self.status.setText(f'완료: {len(self.paths)}개 파일, {row_count:,}개 데이터 행을 변경 없이 병합했습니다. {output}')
 
 
 class JellyRollDiameterWindow(QtWidgets.QMainWindow):
@@ -996,8 +1104,17 @@ def smoke(app,output):
     with tempfile.TemporaryDirectory() as temp:
         suite=SuiteWindow();suite.show();app.processEvents()
         assert suite.windowTitle()=='Battery Analysis Suite'
-        assert len(suite.findChildren(QtWidgets.QPushButton))==5
+        assert len(suite.findChildren(QtWidgets.QPushButton))==6
         suite.close()
+        merge_parts=[]
+        for name,rows in [('raw.csv',[['Time','Voltage'],['0','3.0']]),('raw(1).csv',[['Time','Voltage'],['1','3.1']]),('raw(2).csv',[['Time','Voltage'],['2','3.2']])]:
+            part=Path(temp)/name
+            with open(part,'w',encoding='utf-8-sig',newline='') as handle:csv.writer(handle).writerows(rows)
+            merge_parts.append(part)
+        merge_win=RawCsvMergeWindow(home=None);merge_win.paths=[merge_parts[2],merge_parts[0],merge_parts[1]];merge_win.paths.sort(key=merge_win.natural_key)
+        merged_path=Path(temp)/'raw_병합.csv';merge_win.merge_to(merged_path)
+        assert RawCsvMergeWindow.csv_rows(merged_path)==[['Time','Voltage'],['0','3.0'],['1','3.1'],['2','3.2']]
+        merge_win.close()
         jelly_frame=pd.DataFrame([['Lot ID','Diameter'],['JR-01',10.12],['JR-02',10.25],['JR-01',10.18],['JR-02',10.29],['JR-02',10.31]])
         jelly_path=Path(temp)/'jelly.csv';jelly_frame.to_csv(jelly_path,index=False,header=False,encoding='utf-8-sig')
         jelly_win=JellyRollDiameterWindow(home=None);jelly_win.load_raw_file(jelly_path);app.processEvents()
