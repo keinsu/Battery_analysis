@@ -31,19 +31,22 @@ jobs:
           python -m pip install pywin32 pyinstaller
       - name: Check source
         run: python -m py_compile OutlookMailFinder/OutlookMailFinder.py
+      - name: Python source smoke test
+        shell: pwsh
+        run: python OutlookMailFinder/OutlookMailFinder.py --self-test
       - name: Build standalone GUI EXE
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name OutlookMailFinder --hidden-import=pythoncom --hidden-import=pywintypes --collect-submodules=win32com --distpath dist OutlookMailFinder/OutlookMailFinder.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name OutlookMailFinder --hidden-import=pythoncom --hidden-import=pywintypes --collect-submodules=win32com --distpath dist OutlookMailFinder/OutlookMailFinder.py
       - name: Check EXE self-test (no Outlook profile required)
         shell: pwsh
         run: |
-          python -c "import subprocess; p=subprocess.run(['dist/OutlookMailFinder.exe','--self-test'],timeout=80); print('EXE self-test exit:',p.returncode); assert p.returncode == 0"
+          python -c "import subprocess; p=subprocess.run(['dist/OutlookMailFinder/OutlookMailFinder.exe','--self-test'],timeout=45); print('EXE self-test exit:',p.returncode); assert p.returncode == 0"
       - name: Make ZIP
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
-          Copy-Item dist/OutlookMailFinder.exe package/
+          Copy-Item dist/OutlookMailFinder package/OutlookMailFinder -Recurse
           Copy-Item OutlookMailFinder/README_ko.txt package/
           Compress-Archive -Path package/* -DestinationPath OutlookMailFinder_Windows_v0.2.zip -Force
       - name: Upload ready-to-run ZIP
