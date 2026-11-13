@@ -1,0 +1,55 @@
+name: Build Outlook Mail Finder Windows EXE
+on:
+  push:
+    branches: [outlook-mail-finder-exe]
+    paths:
+      - 'OutlookMailFinder/**'
+      - '.github/workflows/build-outlook-mail-finder.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+      - name: Restore Python source (no mail files included)
+        shell: pwsh
+        run: |
+          python -c "import pathlib,base64,zlib; p=pathlib.Path('OutlookMailFinder/source.zlib.b64'); pathlib.Path('OutlookMailFinder/OutlookMailFinder.py').write_bytes(zlib.decompress(base64.b64decode(p.read_text().strip())))"
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pywin32 pyinstaller
+      - name: Check source
+        run: python -m py_compile OutlookMailFinder/OutlookMailFinder.py
+      - name: Build standalone GUI EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name OutlookMailFinder --hidden-import=pythoncom --hidden-import=pywintypes --collect-submodules=win32com --distpath dist OutlookMailFinder/OutlookMailFinder.py
+      - name: Check EXE self-test (no Outlook profile required)
+        shell: pwsh
+        run: |
+          python -c "import subprocess; p=subprocess.run(['dist/OutlookMailFinder.exe','--self-test'],timeout=80); print('EXE self-test exit:',p.returncode); assert p.returncode == 0"
+      - name: Make ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item dist/OutlookMailFinder.exe package/
+          Copy-Item OutlookMailFinder/README_ko.txt package/
+          Compress-Archive -Path package/* -DestinationPath OutlookMailFinder_Windows_v0.2.zip -Force
+      - name: Upload ready-to-run ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: OutlookMailFinder_Windows_v0_2
+          path: OutlookMailFinder_Windows_v0.2.zip
+          retention-days: 14
+          if-no-files-found: error
