@@ -24,6 +24,9 @@ jobs:
         shell: pwsh
         run: |
           python -c "import pathlib,base64,zlib; p=pathlib.Path('OutlookMailFinder/source.zlib.b64'); pathlib.Path('OutlookMailFinder/OutlookMailFinder.py').write_bytes(zlib.decompress(base64.b64decode(p.read_text().strip())))"
+      - name: Apply Windows test cleanup fix
+        shell: pwsh
+        run: python OutlookMailFinder/patch_selftest.py
       - name: Install dependencies
         shell: pwsh
         run: |
