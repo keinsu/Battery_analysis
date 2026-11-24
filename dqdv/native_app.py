@@ -14,6 +14,7 @@ import pyqtgraph.exporters
 from PySide6 import QtCore, QtWidgets, QtGui
 from core import read_csv, normalize, segment_table, calculate_cycle, calculate_step, lowest_current_step, latest_cycle_for_step
 from cycle_selection import select_cycles
+from csv_sampling import sample_csv
 
 pg.setConfigOptions(background='w',foreground='#172033',antialias=True)
 
@@ -38,9 +39,8 @@ class SuiteWindow(QtWidgets.QMainWindow):
         cards.addWidget(self.tool_card('사이클분석','Cycle별 충방전 용량과 효율, 전압 거동을 분석하는 다음 프로그램입니다.','프로그램 열기',self.open_cycle_analysis,False),1,1)
         cards.addWidget(self.tool_card('Jelly Roll 외경 정리','Lot ID별 반복 외경 측정값을 세로 표로 정리해 Excel 파일로 저장합니다.','프로그램 열기',self.open_jelly_roll_diameter,True),2,0)
         cards.addWidget(self.tool_card('Raw CSV 병합','분할된 다수의 Raw CSV를 원본 행 순서 그대로 하나의 CSV로 병합합니다.','프로그램 열기',self.open_raw_csv_merge,True),2,1)
+        cards.addWidget(self.tool_card('Raw CSV 행 추출','시작 행부터 일정 간격으로 한 행씩 골라 새 CSV에 저장합니다.','프로그램 열기',self.open_raw_csv_sampling,True),3,0)
         layout.addStretch()
-        note=QtWidgets.QLabel('현재 제공 기능: dQ/dV Analyzer   ·   다음 확장: 사이클분석')
-        note.setStyleSheet('color:#64748b;');layout.addWidget(note)
 
     @staticmethod
     def tool_card(name,description,button_text,action,ready):
@@ -70,8 +70,97 @@ class SuiteWindow(QtWidgets.QMainWindow):
     def open_raw_csv_merge(self):
         self.active_window=RawCsvMergeWindow(home=self);self.hide();self.active_window.show()
 
+    def open_raw_csv_sampling(self):
+        self.active_window = RawCsvSamplingWindow(home=self)
+        self.hide()
+        self.active_window.show()
+
     def open_cycle_analysis(self):
         self.active_window=CycleAnalysisWindow(home=self);self.hide();self.active_window.show()
+
+
+class RawCsvSamplingWindow(QtWidgets.QMainWindow):
+    def __init__(self, home):
+        super().__init__()
+        self.home = home
+        self.source = None
+        self.setWindowTitle('Raw CSV 행 추출 — Battery Analysis Suite')
+        self.resize(640, 300)
+
+        central = QtWidgets.QWidget()
+        self.setCentralWidget(central)
+        layout = QtWidgets.QVBoxLayout(central)
+        back = QtWidgets.QPushButton('← 프로그램 목록')
+        back.clicked.connect(self.return_home)
+        layout.addWidget(back, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+
+        file_row = QtWidgets.QHBoxLayout()
+        open_button = QtWidgets.QPushButton('CSV 열기')
+        open_button.clicked.connect(self.open_file)
+        file_row.addWidget(open_button)
+        self.file_label = QtWidgets.QLabel('선택된 파일 없음')
+        self.file_label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self.file_label.setWordWrap(True)
+        file_row.addWidget(self.file_label, 1)
+        layout.addLayout(file_row)
+
+        options = QtWidgets.QFormLayout()
+        self.start_row = QtWidgets.QSpinBox()
+        self.start_row.setRange(2, 2_147_483_647)
+        options.addRow('시작 행', self.start_row)
+        self.interval = QtWidgets.QSpinBox()
+        self.interval.setRange(1, 2_147_483_647)
+        self.interval.setValue(5)
+        options.addRow('저장 간격 (행)', self.interval)
+        layout.addLayout(options)
+
+        hint = QtWidgets.QLabel('1행은 열 제목으로 저장합니다. 시작 행이 3이고 간격이 5이면 3, 8, 13행을 저장합니다.')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.save_button = QtWidgets.QPushButton('새 CSV로 저장')
+        self.save_button.setEnabled(False)
+        self.save_button.clicked.connect(self.save_file)
+        layout.addWidget(self.save_button, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+        self.status = QtWidgets.QLabel()
+        self.status.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        layout.addStretch()
+
+    def return_home(self):
+        self.home.show()
+        self.close()
+
+    def open_file(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, '원본 CSV 선택', '', 'CSV (*.csv)')
+        if path:
+            self.source = Path(path)
+            self.file_label.setText(self.source.name)
+            self.status.clear()
+            self.save_button.setEnabled(True)
+
+    def save_file(self):
+        start = self.start_row.value()
+        interval = self.interval.value()
+        suggested = self.source.with_name(f'{self.source.stem}_{start}행부터_{interval}행간격.csv')
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, '추출한 CSV 저장', str(suggested), 'CSV (*.csv)')
+        if not path:
+            return
+        output = Path(path if path.lower().endswith('.csv') else path + '.csv')
+        self.status.clear()
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        try:
+            count = sample_csv(self.source, output, start, interval)
+        except (OSError, ValueError, csv.Error) as exc:
+            error = str(exc)
+        else:
+            error = None
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        if error is None:
+            self.status.setText(f'{count:,}개 데이터 행 저장 완료 · {output}')
+        else:
+            QtWidgets.QMessageBox.warning(self, '저장 실패', error)
 
 
 class RawCsvMergeWindow(QtWidgets.QMainWindow):
@@ -1104,7 +1193,10 @@ def smoke(app,output):
     with tempfile.TemporaryDirectory() as temp:
         suite=SuiteWindow();suite.show();app.processEvents()
         assert suite.windowTitle()=='Battery Analysis Suite'
-        assert len(suite.findChildren(QtWidgets.QPushButton))==6
+        assert len(suite.findChildren(QtWidgets.QPushButton))==7
+        suite.open_raw_csv_sampling()
+        assert isinstance(suite.active_window, RawCsvSamplingWindow)
+        suite.active_window.return_home()
         suite.close()
         merge_parts=[]
         for name,rows in [('raw.csv',[['Time','Voltage'],['0','3.0']]),('raw(1).csv',[['Time','Voltage'],['1','3.1']]),('raw(2).csv',[['Time','Voltage'],['2','3.2']])]:

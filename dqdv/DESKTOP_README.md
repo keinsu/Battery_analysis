@@ -1,8 +1,8 @@
-# Battery Analysis Suite v0.11.0
+# Battery Analysis Suite v0.11.1
 
 `BatteryAnalysisSuite-Desktop.exe` 하나를 다운로드하고 실행합니다. Python 설치, 브라우저, 웹 서버, 별도 _internal 폴더가 필요하지 않습니다. 첫 실행 시 분석 프로그램 선택 화면이 나타나며, 포함된 런타임을 임시 폴더에 푸는 동안 잠시 걸릴 수 있습니다.
 
-1. 시작 화면에서 `dQ/dV Analyzer`, `Step dQ/dV Analyzer`, `Cycle 데이터 입력`, `Jelly Roll 외경 정리`, `Raw CSV 병합`, 또는 `사이클분석`을 선택합니다. `dQ/dV Analyzer`는 Cycle 변화 분석이고, `Step dQ/dV Analyzer`는 충전 Step·방전 Step을 각각 지정하는 한 사이클 분석입니다. `Cycle 데이터 입력`은 정리용 template에 원본 스프레드시트 데이터를 배치하는 작업 공간입니다. 사이클분석은 다음 확장 작업 공간입니다.
+1. 시작 화면에서 `dQ/dV Analyzer`, `Step dQ/dV Analyzer`, `Cycle 데이터 입력`, `Jelly Roll 외경 정리`, `Raw CSV 병합`, `Raw CSV 행 추출`, 또는 `사이클분석`을 선택합니다. `dQ/dV Analyzer`는 Cycle 변화 분석이고, `Step dQ/dV Analyzer`는 충전 Step·방전 Step을 각각 지정하는 한 사이클 분석입니다. `Cycle 데이터 입력`은 정리용 template에 원본 스프레드시트 데이터를 배치하는 작업 공간입니다. 사이클분석은 다음 확장 작업 공간입니다.
 2. dQ/dV Analyzer에서 CSV 열기를 누르고 파일을 선택합니다.
 3. 두 파일을 비교하려면 `비교 CSV 추가`를 눌러 파일 B를 선택하고, 왼쪽의 비교 채널·비교 Cycle을 설정합니다. 파일 A는 진한 파랑→연한 파랑→연한 빨강→진한 빨강, 파일 B는 진한 검정→연한 검정→연한 보라→진한 보라로 cycle 순서에 따라 표시됩니다. 충전은 실선, 방전은 점선입니다.
 4. 열과 단위를 확인합니다. 전압은 V/mV/µV를 실제 숫자 크기로 먼저 자동 추정하고 열 이름은 보조로 사용합니다. 읽어들인 열과 적용 단위는 파일명 옆에 표시됩니다. 필요하면 왼쪽 설정을 바꾸고 열·단위 적용을 누릅니다.
